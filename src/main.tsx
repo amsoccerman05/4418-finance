@@ -1,4 +1,4 @@
-import { SuiteSwitcher } from './SuiteSwitcher';
+import { SuiteHeader } from './SuiteHeader';
 import {
   StrictMode,
   useEffect,
@@ -134,23 +134,7 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <header className="site-header">
-        <div className="header-inner">
-          <div className="brand">
-            <span className="brand-mark">
-              <img
-                src="/branding/4418-impulse-emblem.png"
-                alt="Team 4418 IMPULSE"
-              />
-            </span>
-            <div>
-              4418<span>FINANCE</span>
-            </div>
-          </div>
-          <a className="suite-home" href="https://team.frc4418.org">
-            Team Hub / Home
-          </a>
-<SuiteSwitcher current="Finance" />
+      <SuiteHeader app="Finance" context="Purchase orders">
           {signed && (
             <button
               className="secondary"
@@ -165,8 +149,7 @@ function App() {
               Sign out
             </button>
           )}
-        </div>
-      </header>
+      </SuiteHeader>
       <main id="main">
         <div className="page-heading">
           <div>
