@@ -69,6 +69,8 @@ test("Finance uses real Hub broker protocol: one login, cross-origin session and
   await page.getByLabel("Email", { exact: true }).fill("test@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill("fixture-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("Shared session ready")).toBeVisible();
+  await page.goto("https://finance.frc4418.org/");
   await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
   expect(logins).toBe(1);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
@@ -95,7 +97,7 @@ test("unresponsive production-origin broker cannot leave loading forever", async
     await r.fulfill({response});
   });
   await page.goto("https://finance.frc4418.org/");
-  await expect(page.getByRole("alert")).toContainText("Team sign-in timed out",{timeout:20000});
-  await expect(page.getByRole("heading",{name:"Team sign-in"})).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Unable to connect securely",{timeout:20000});
+  await expect(page.locator(".suite-header")).toHaveCount(0);
   await expect(page.getByText("Loading Finance…")).toHaveCount(0);
 });

@@ -1,3 +1,4 @@
+import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
 import {
   StrictMode,
@@ -128,28 +129,15 @@ function App() {
       setBusy(false);
     }
   }
+  if(!signed)return <AuthSurface redirect={!!client&&!loading&&!error}>{error||!client?<><p role="alert">Unable to connect securely. Please try again.</p><a href="https://team.frc4418.org/">Team sign in</a></>:undefined}</AuthSurface>;
   const po = data?.orders.find((p) => p.id === selected);
   return (
     <>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Finance" context="Purchase orders">
-          {signed && (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const r = await client!.auth.signOut();
-                  if (r.error) throw r.error;
-                }, "Signed out")
-              }
-            >
-              Sign out
-            </button>
-          )}
-      </SuiteHeader>
+      <SuiteHeader app="Finance" context="Purchase orders" name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
+
       <main id="main">
         <div className="page-heading">
           <div>

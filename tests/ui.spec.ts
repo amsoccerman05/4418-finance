@@ -315,6 +315,7 @@ test("stalled data request has a bounded error state", async ({ page }) => {
   await expect(page.getByText("Loading Finance…")).toHaveCount(0);
 });
 test("signed out users see sign-in", async ({page}) => {
+ await page.route("https://team.frc4418.org/",r=>r.fulfill({contentType:"text/html",body:"<h1>Team sign in</h1>"}));
   await page.goto("/");
-  await expect(page.getByRole("heading", {name:"Team sign-in"})).toBeVisible();
+  await expect(page).toHaveURL("https://team.frc4418.org/");
 });
