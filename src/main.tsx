@@ -1,3 +1,4 @@
+import { SuiteSwitcher } from './SuiteSwitcher';
 import {
   StrictMode,
   useEffect,
@@ -149,21 +150,7 @@ function App() {
           <a className="suite-home" href="https://team.frc4418.org">
             Team Hub / Home
           </a>
-          <select
-            aria-label="Team 4418 apps"
-            value="finance"
-            onChange={(e) => {
-              location.href = e.target.value;
-            }}
-          >
-            <option value="finance">Finance</option>
-            <option value="https://team.frc4418.org">Team Hub</option>
-            <option value="https://inventory.frc4418.org">Inventory</option>
-            <option value="https://pit.frc4418.org">Pit Operations</option>
-            <option value="https://team.frc4418.org/#attendance">
-              Attendance
-            </option>
-          </select>
+<SuiteSwitcher current="Finance" />
           {signed && (
             <button
               className="secondary"
