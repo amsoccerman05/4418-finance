@@ -1,0 +1,53 @@
+name: Review and deploy Finance
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      schema_reviewed_and_applied:
+        description: Finance schema reviewed and manually applied
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: finance-pages
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.schema_reviewed_and_applied
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Require public Supabase configuration
+        env:
+          PROJECT_URL: ${{ vars.VITE_SUPABASE_URL }}
+          PUBLIC_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: test -n "$PROJECT_URL" && test -n "$PUBLIC_KEY"
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment
