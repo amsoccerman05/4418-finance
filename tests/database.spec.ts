@@ -15,6 +15,8 @@ const ids = {
   readonly: uid(8),
   inactive: uid(9),
   prospective: uid(10),
+  coach2: uid(11),
+  mentor: uid(12),
 };
 const area = uid(101),
   otherArea = uid(102);
@@ -76,30 +78,25 @@ async function fullApproved() {
 test.beforeAll(async () => {
   db = new PGlite();
   await db.exec(`create role anon;create role authenticated;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;
-create table public.areas(id uuid primary key,name text,active boolean);insert into public.areas values('${area}','Fabrication',true),('${otherArea}','Power',true);
-create table public.profiles(id uuid primary key,display_name text,role text,active boolean,primary_area_id uuid);
-create table public.team_attendance_members(student_id uuid primary key,member_status text);
+create table public.areas(id uuid primary key,name text,active boolean,slug text unique default gen_random_uuid()::text);insert into public.areas(id,name,active) values('${area}','Fabrication',true),('${otherArea}','Power',true);
+create table public.profiles(id uuid primary key,display_name text,role text,active boolean,primary_area_id uuid,updated_at timestamptz default now());
+create table public.team_attendance_members(student_id uuid primary key,member_status text,team_area text default '');
 ${Object.entries(ids)
   .map(
     ([name, id]) =>
-      `insert into public.profiles values('${id}','${name}','${name === "admin" ? "admin" : name === "lead" ? "lead" : name === "readonly" ? "readonly" : "student"}',${name !== "inactive"},'${area}');insert into public.team_attendance_members values('${id}','${name === "prospective" ? "prospective" : "registered"}');`,
+      `insert into public.profiles values('${id}','${name}','${name === "admin" ? "admin" : name === "mentor" ? "mentor" : name === "lead" ? "lead" : name === "readonly" ? "readonly" : "student"}',${name !== "inactive"},'${area}',now());insert into public.team_attendance_members values('${id}','${name === "prospective" ? "prospective" : "registered"}','');`,
   )
   .join("\n")}`);
   await db.exec(
     readFileSync("supabase/migrations/202609120002_finance_v1.sql", "utf8"),
   );
+  await db.exec("grant select on public.profiles to authenticated");
+  await db.exec(readFileSync("tests/fixtures/team_management_positions.sql", "utf8"));
   await as("admin");
-  for (const [who, capability] of [
-    ["finance", "finance_approver"],
-    ["po", "po_approver"],
-    ["submitter", "school_submitter"],
-  ] as const)
-    await call("assignment", {
-      user_id: ids[who],
-      capability,
-      active: true,
-      reason: "Season assignment",
-    });
+  for (const [who,position_key] of [["finance","finance_lead"],["po","lead_coach_1"],["coach2","lead_coach_2"]] as const) {
+    await db.query("select public.team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids[who],position_key,reason:"Season assignment"})]);
+  }
+  await call("assignment", {user_id:ids.submitter,capability:"school_submitter",active:true,reason:"School submission assignment"});
 });
 test.afterAll(async () => {
   await db.close();
@@ -266,23 +263,14 @@ test("unassigned admins need explicit override; one person cannot fill both slot
   ).rejects.toThrow(/distinct/);
   await act("po", id, "approve", { slot: "po_approver" });
   await as("admin");
-  await call("assignment", {
-    user_id: ids.student,
-    capability: "finance_approver",
-    active: true,
-    reason: "Test eligibility",
-  });
+  await db.query("select public.team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids.student,position_key:"finance_lead",reason:"Test eligibility"})]);
   const own = await submitted();
   await expect(
     act("student", own, "approve", { slot: "finance_approver" }),
   ).rejects.toThrow(/override/);
   await as("admin");
-  await call("assignment", {
-    user_id: ids.student,
-    capability: "finance_approver",
-    active: false,
-    reason: "End test assignment",
-  });
+  const assignment=(await db.query<any>("select id from team_member_positions where user_id=$1 and revoked_at is null",[ids.student])).rows[0];
+  await db.query("select public.team_manage('revoke_position',$1::jsonb)",[JSON.stringify({user_id:ids.student,assignment_id:assignment.id,reason:"End test assignment"})]);
   const history = (
     await db.query<any>(
       "select * from public.finance_po_history where po_id=$1",
@@ -406,4 +394,57 @@ test("student history allowlists activity fields and keeps raw audit inaccessibl
   }
   await as("other");
   expect((await db.query("select * from public.finance_po_history where po_id=$1", [id])).rows).toHaveLength(0);
+});
+
+test("only Lead Coach 2 assigned leaves Finance pending and school submission blocked", async()=>{
+ await as("admin");
+ const assignments=(await db.query<any>("select id,user_id,position_key from team_member_positions where position_key in ('lead_coach_1','finance_lead') and revoked_at is null")).rows;
+ try {
+  for(const a of assignments) await db.query("select team_manage('revoke_position',$1::jsonb)",[JSON.stringify({user_id:a.user_id,assignment_id:a.id,reason:"Vacant positions scenario"})]);
+  const id=await submitted();
+  await act("coach2",id,"approve",{slot:"po_approver"});
+  for(const who of ["finance","po","mentor","admin","other"] as const)
+   await expect(act(who,id,"approve",{slot:"finance_approver"})).rejects.toThrow();
+  await expect(act("coach2",id,"approve",{slot:"finance_approver"})).rejects.toThrow();
+  expect((await row(id)).status).toBe("awaiting_approval");
+  await expect(act("admin",id,"school_submit")).rejects.toThrow(/approvals/);
+  await as("admin");
+  const approvals=(await db.query<any>("select slot,actor_id from finance_po_approvals where po_id=$1",[id])).rows;
+  expect(approvals).toEqual([{slot:"po_approver",actor_id:ids.coach2}]);
+ } finally {
+  await as("admin");
+  for(const a of assignments) await db.query("select team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:a.user_id,position_key:a.position_key,reason:"Restore fixture positions"})]);
+ }
+});
+test("Lead Coach 2 and Finance Lead satisfy both slots", async()=>{
+ const id=await submitted();await act("coach2",id,"approve",{slot:"po_approver"});await act("finance",id,"approve",{slot:"finance_approver"});expect((await row(id)).status).toBe("approved");
+});
+test("revoked positions block future approvals but preserve earlier revisions and decisions",async()=>{
+ const id=await fullApproved();await as("admin");
+ const a=(await db.query<any>("select id from team_member_positions where user_id=$1 and position_key='finance_lead' and revoked_at is null",[ids.finance])).rows[0];
+ await db.query("select team_manage('revoke_position',$1::jsonb)",[JSON.stringify({user_id:ids.finance,assignment_id:a.id,reason:"Leadership transition"})]);
+ await act("student",id,"edit",base);await act("student",id,"submit");
+ await expect(act("finance",id,"approve",{slot:"finance_approver"})).rejects.toThrow();
+ await as("admin");expect((await db.query("select * from finance_po_approvals where po_id=$1 and revision=1",[id])).rows).toHaveLength(2);
+ expect((await db.query("select * from finance_po_revisions where po_id=$1",[id])).rows).toHaveLength(2);
+ await db.query("select team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids.finance,position_key:"finance_lead",reason:"Restore assignment"})]);
+});
+test("dual position holder still needs another person; legacy capabilities do not authorize approval",async()=>{
+ await as("admin");await db.query("select team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids.finance,position_key:"lead_coach_1",reason:"Dual position test"})]);
+ const id=await submitted();await act("finance",id,"approve",{slot:"finance_approver"});
+ await expect(act("finance",id,"approve",{slot:"po_approver"})).rejects.toThrow(/distinct/);
+ await as("admin");await expect(call("assignment",{user_id:ids.other,capability:"po_approver",active:true,reason:"Old interface"})).rejects.toThrow(/Team Hub/);
+ await db.exec("reset role");await db.query("insert into finance_assignments(user_id,capability,assigned_by) values($1,'po_approver',$2)",[ids.other,ids.admin]);
+ const second=await submitted();await expect(act("other",second,"approve",{slot:"po_approver"})).rejects.toThrow();
+});
+test("Finance admin alone cannot use an emergency override or submit to school",async()=>{
+ await as("admin");await call("assignment",{user_id:ids.other,capability:"finance_admin",active:true,reason:"Finance support"});
+ const id=await submitted();await expect(act("other",id,"approve",{slot:"finance_approver",override_reason:"Not a mentor"})).rejects.toThrow();
+ await act("finance",id,"approve",{slot:"finance_approver"});await act("po",id,"approve",{slot:"po_approver"});
+ await expect(act("other",id,"school_submit")).rejects.toThrow(/capability/);
+});
+
+test("unpositioned mentor and random student cannot approve through the normal path",async()=>{
+ const id=await submitted();await expect(act("mentor",id,"approve",{slot:"po_approver"})).rejects.toThrow(/override/);
+ await as("student");await expect(call("approve",{id,version:(await row(id)).version,slot:"po_approver"})).rejects.toThrow(/override/);
 });

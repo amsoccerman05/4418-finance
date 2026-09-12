@@ -78,7 +78,7 @@ export type Data = {
   assignments: Assignment[];
 };
 export const label = (s: string) =>
-  s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  ({ finance_approver: "Finance Lead", po_approver: "Lead Coach" } as Record<string,string>)[s] || s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 export const money = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     n,
@@ -126,7 +126,7 @@ export async function load(): Promise<Data> {
     ]);
   return { context, orders, approvals, history, revisions, assignments };
 }
-export const slots = ["finance_approver", "po_approver"];
+export const slots = ["po_approver", "finance_approver"];
 export function approved(d: Data, p: PO, slot: string) {
   return (
     !["draft", "cancelled"].includes(p.status) &&

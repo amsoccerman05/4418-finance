@@ -592,8 +592,8 @@ function Overview({
             <option value="waiting">Waiting on other approval</option>
             <option value="ready">Ready for school</option>
             <option value="submitted">Submitted</option>
-            <option value="finance_approver">Finance pending</option>
-            <option value="po_approver">PO approval pending</option>
+            <option value="finance_approver">Finance Lead pending</option>
+            <option value="po_approver">Lead Coach pending</option>
           </select>
         </label>
       </div>
@@ -761,6 +761,7 @@ function Detail({
 }) {
   const name = (id: string | null) =>
     d.context.people.find((n) => n.id === id)?.name || "Team member";
+  const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
   const owner = p.requester_id === d.context.profile.id || d.context.is_admin;
   const locked = ["cancelled", "submitted_to_school"].includes(p.status);
   return (
@@ -854,8 +855,8 @@ function Detail({
           const latest = p.status === "draft" ? undefined : actions[0];
           const canAct =
             p.status === "awaiting_approval" &&
-            (d.context.capabilities.includes(slot) || d.context.is_admin) &&
-            (p.requester_id !== d.context.profile.id || d.context.is_admin);
+            (d.context.capabilities.includes(slot) || canOverride) &&
+            (p.requester_id !== d.context.profile.id || canOverride);
           const alreadyActed = d.approvals.some(
             (a) =>
               a.po_id === p.id &&
@@ -867,10 +868,11 @@ function Detail({
             <section className="panel" key={slot}>
               <h2>
                 {slot === "finance_approver"
-                  ? "Finance Approval"
-                  : "PO Approval"}
+                  ? "Finance Lead Approval"
+                  : "Lead Coach Approval"}
               </h2>
               <Badge status={latest?.action || "pending"} />
+              {!latest && <p>Waiting for {slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}</p>}
               {latest && (
                 <>
                   <p>
@@ -907,7 +909,7 @@ function Detail({
                     Explanation / requested changes
                     <textarea name="reason" maxLength={2000} />
                   </label>
-                  {d.context.is_admin && (
+                  {canOverride && (
                     <label>
                       Override reason (required if unassigned or requester)
                       <input name="override_reason" maxLength={2000} />
@@ -921,7 +923,7 @@ function Detail({
                   <div className="toolbar">
                     {!approved(d, p, slot) && !alreadyActed && (
                       <button className="primary" value="approve">
-                        Approve {slot === "finance_approver" ? "Finance" : "PO"}
+                        Approve {slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}
                       </button>
                     )}
                     <button className="secondary" value="request_changes">
@@ -946,7 +948,7 @@ function Detail({
             <p>{p.school_note}</p>
           </>
         ) : p.status === "approved" &&
-          (d.context.is_admin ||
+          (canOverride ||
             d.context.capabilities.includes("school_submitter")) ? (
           <form
             className="form"
@@ -1045,10 +1047,11 @@ function Assignments({ data: d, run }: { data: Data; run: Run }) {
   return (
     <>
       <p>
-        Configure each approval slot, school submitters, and Finance
-        administrators. Two distinct people must approve a revision;
-        self-approval requires an audited administrator override.
+        Lead Coach and Finance Lead positions are managed in Team Hub.
+        Two distinct people must approve each revision. This page manages only
+        school submission and Finance administration access.
       </p>
+      <p><a href="https://team.frc4418.org/#team-management">Manage team positions in Team Hub →</a></p>
       <form
         className="form"
         onSubmit={(e) => {
@@ -1072,7 +1075,7 @@ function Assignments({ data: d, run }: { data: Data; run: Run }) {
         <label>
           Capability
           <select name="capability">
-            {[...slots, "school_submitter", "finance_admin"].map((c) => (
+            {["school_submitter", "finance_admin"].map((c) => (
               <option value={c} key={c}>
                 {label(c)}
               </option>
@@ -1092,7 +1095,7 @@ function Assignments({ data: d, run }: { data: Data; run: Run }) {
         </label>
         <button className="primary">Save assignment</button>
       </form>
-      {d.assignments.map((a) => (
+      {d.assignments.filter(a => !slots.includes(a.capability)).map((a) => (
         <p className="activity" key={a.id}>
           {d.context.people.find((p) => p.id === a.user_id)?.name ||
             "Former team member"}{" "}

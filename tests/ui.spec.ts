@@ -175,7 +175,7 @@ for (const width of [390, 1440])
       dialog.getByText("Awaiting Approval", { exact: true }),
     ).toBeVisible();
     await expect(
-      dialog.getByRole("button", { name: "Approve Finance" }),
+      dialog.getByRole("button", { name: "Approve Finance Lead" }),
     ).toHaveCount(0);
     expect(calls.map((c) => c.action)).toEqual(["create", "submit"]);
     expect(
@@ -228,7 +228,7 @@ for (const width of [390, 1440])
     await page.goto("/");
     await page.getByRole("button", { name: /Robot Supplier/ }).click();
     await page
-      .getByRole("button", { name: "Approve Finance", exact: true })
+      .getByRole("button", { name: "Approve Finance Lead", exact: true })
       .click();
     await expect(
       page.getByRole("button", { name: "Mark submitted to school" }),

@@ -34,3 +34,9 @@ Start review with [docs/SCHEMA-REVIEW.md](docs/SCHEMA-REVIEW.md).
 8. An existing active mentor/admin signs in and opens **Finance assignments**. Assign separate people to `finance_approver` and `po_approver`, plus a `school_submitter`. Assignment changes require explanations and are audited. Registered students can then submit their sheets.
 
 No GitHub remote repository, production schema, deployment or DNS was created/changed during this local build.
+
+## Pending shared-position rollout (local review only)
+
+The local UI and tests now use **Lead Coach Approval** and **Finance Lead Approval**. Review/apply Hub's additive `202609120003_team_management_positions.sql` before publishing this version. The migration retains old slot keys and approval history, derives normal authorization from shared positions, and leaves school submission separate. Legacy approver capability rows are retained but are no longer used for new approvals. An active mentor/admin must explicitly assign the correct position holders in Hub; no holders are guessed. Finance-only administrators cannot use emergency approval overrides. No production migration or deployment has been performed for this pending change.
+
+`tests/fixtures/team_management_positions.sql` mirrors Hub's canonical migration for independent CI; never apply the fixture separately.
