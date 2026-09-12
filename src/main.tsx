@@ -34,11 +34,19 @@ const err = (e: unknown) =>
   e && typeof e === "object" && "message" in e
     ? String(e.message)
     : "Unable to complete this action.";
+function bounded<T>(work: PromiseLike<T>, message: string, ms = 15000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    Promise.resolve(work).then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+const loadFinance = () => bounded(load(), "Finance data timed out. Reload to try again.");
 type Run = (work: () => Promise<unknown>, message?: string) => Promise<void>;
 function App() {
   const [data, setData] = useState<Data | null>(null),
     [signed, setSigned] = useState(false),
     [loading, setLoading] = useState(!!client),
+    [denied, setDenied] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -50,10 +58,11 @@ function App() {
   useEffect(() => {
     if (!client) return;
     let mounted = true;
-    const sub = client.auth.onAuthStateChange((event, session) => {
+    const receive = (event: string, session: unknown) => {
       const gen = ++generation.current;
       setSigned(!!session);
       setData(null);
+      setDenied(false);
       setSelected(null);
       setEditing(null);
       setError("");
@@ -61,18 +70,39 @@ function App() {
       if (event === "PASSWORD_RECOVERY") setRecovery(true);
       if (session)
         setTimeout(() => {
-          void load()
+          void loadFinance()
             .then((d) => {
               if (mounted && gen === generation.current) setData(d);
             })
             .catch((e) => {
-              if (mounted && gen === generation.current) setError(err(e));
+              if (mounted && gen === generation.current) {
+                setDenied(e?.code === "42501" || e?.status === 403);
+                setError(err(e));
+              }
             })
             .finally(() => {
               if (mounted && gen === generation.current) setLoading(false);
             });
         }, 0);
+    };
+    let eventReceived = false;
+    const sub = client.auth.onAuthStateChange((event, session) => {
+      eventReceived = true;
+      receive(event, session);
     });
+    // Do not rely on an auth event being emitted: failed broker bootstrap must
+    // also settle the initial screen, and stale session reads must not win.
+    void bounded(client.auth.getSession(), "Team sign-in timed out. Reload or open Team Hub.")
+      .then(({ data, error }) => {
+        if (!mounted || eventReceived) return;
+        if (error) throw error;
+        receive("INITIAL_SESSION", data.session);
+      })
+      .catch((e) => {
+        if (!mounted || eventReceived) return;
+        setLoading(false);
+        setError(err(e));
+      });
     return () => {
       mounted = false;
       generation.current++;
@@ -87,7 +117,7 @@ function App() {
     try {
       await work();
       if (signed) {
-        const d = await load();
+        const d = await loadFinance();
         if (gen === generation.current) setData(d);
       }
       if (gen === generation.current) setMessage(text);
@@ -290,7 +320,11 @@ function App() {
                 <Overview data={data} onOpen={setSelected} />
               </>
             ) : (
-              <p>Finance is unavailable for this account. Contact a mentor.</p>
+              <div className="panel">
+                <h2>{denied ? "Finance access denied" : "Finance could not load"}</h2>
+                <p>{denied ? "Your account does not have an active Finance profile. Contact a mentor." : "The Finance service is unavailable. Reload to try again."}</p>
+                <button onClick={() => location.reload()}>Reload Finance</button>
+              </div>
             )}
             {data && (po || editing || admin) && (
               <Dialog

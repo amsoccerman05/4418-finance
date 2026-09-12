@@ -86,3 +86,16 @@ test("Finance uses real Hub broker protocol: one login, cross-origin session and
   ).toBeVisible();
   expect(logins).toBe(1);
 });
+
+test("unresponsive production-origin broker cannot leave loading forever", async ({context,page}) => {
+  await context.route("https://team.frc4418.org/suite-auth.html", r => r.fulfill({contentType:"text/html",body:"<!doctype html><title>Unresponsive broker</title>"}));
+  await context.route("https://finance.frc4418.org/**", async r => {
+    const u=new URL(r.request().url());
+    const response=await r.fetch({url:"http://127.0.0.1:4430"+u.pathname});
+    await r.fulfill({response});
+  });
+  await page.goto("https://finance.frc4418.org/");
+  await expect(page.getByRole("alert")).toContainText("Team sign-in timed out",{timeout:20000});
+  await expect(page.getByRole("heading",{name:"Team sign-in"})).toBeVisible();
+  await expect(page.getByText("Loading Finance…")).toHaveCount(0);
+});

@@ -297,3 +297,24 @@ test("failed approval action keeps error visible in dialog; search and filters r
     page.getByRole("button", { name: /Robot Supplier/ }),
   ).toBeVisible();
 });
+
+for (const code of ["42501", "PGRST202"]) {
+  test(`initial RPC error settles loading: ${code}`, async ({ page }) => {
+    await mock(page);
+    await page.route("**/rpc/finance_context", route => route.fulfill({status: code === "42501" ? 403 : 404, json: {code, message:"Fixture RPC error"}}));
+    await page.goto("/");
+    await expect(page.getByRole("heading", {name: code === "42501" ? "Finance access denied" : "Finance could not load"})).toBeVisible();
+    await expect(page.getByText("Loading Finance…")).toHaveCount(0);
+  });
+}
+test("stalled data request has a bounded error state", async ({ page }) => {
+  await mock(page);
+  await page.route("**/rpc/finance_context", () => new Promise(() => {}));
+  await page.goto("/");
+  await expect(page.getByText("Finance data timed out. Reload to try again.")).toBeVisible({timeout:20000});
+  await expect(page.getByText("Loading Finance…")).toHaveCount(0);
+});
+test("signed out users see sign-in", async ({page}) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", {name:"Team sign-in"})).toBeVisible();
+});
