@@ -572,7 +572,7 @@ function Overview({
             >
               <div>
                 <small>
-                  PO {p.po_number} · Revision {p.revision}
+                  PO {p.po_number}
                 </small>
                 <h3>{p.vendor}</h3>
                 <p>{p.purpose}</p>
@@ -700,7 +700,7 @@ function POForm({
       </details>
       <p className="muted">
         Keep line items in the Google Sheet. Saving edits returns this PO to
-        Draft; submitting again requires both approvals on a new revision.
+        Saved as a draft. Submitting again requires both approvals.
       </p>
       <button className="primary">Save draft</button>
     </form>
@@ -730,8 +730,7 @@ function Detail({
           <p>{p.purpose}</p>
           <small>
             {name(p.requester_id)} ·{" "}
-            {d.context.areas.find((a) => a.id === p.area_id)?.name} · Revision{" "}
-            {p.revision}
+            {d.context.areas.find((a) => a.id === p.area_id)?.name}
           </small>
         </div>
         <strong>{money(p.amount)}</strong>
@@ -753,13 +752,12 @@ function Detail({
         </a>
       )}
       <p className="muted">
-        Approvals apply to this revision. After changing the spreadsheet,
-        edit/resubmit this request—even if its metadata is unchanged.
+        Approvals cover the submitted spreadsheet. If you change it, edit and resubmit the PO for both approvals.
       </p>
       {owner && !locked && (
         <div className="toolbar">
           <button className="secondary" onClick={edit}>
-            Edit / revise
+            Edit purchase order
           </button>
           {["draft", "changes_requested"].includes(p.status) && (
             <button
@@ -941,7 +939,7 @@ function Detail({
           <p>
             {p.status === "approved"
               ? "Ready for a designated school submitter."
-              : "Both approvals on the current revision are required."}
+              : "Both approvals are required for this submission."}
           </p>
         )}
       </section>
@@ -970,7 +968,7 @@ function Detail({
           ))}
       </section>
       <details className="panel">
-        <summary>Previous revision snapshots</summary>
+        <summary>Previous submissions</summary>
         {d.revisions
           .filter((r) => r.po_id === p.id)
           .sort((a, b) => b.revision - a.revision)
@@ -989,7 +987,7 @@ function Detail({
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open revision's Google Sheet link ↗
+                  Open submitted Google Sheet ↗
                 </a>
               )}
               <p className="muted">
@@ -1006,7 +1004,7 @@ function Assignments({ data: d, run }: { data: Data; run: Run }) {
     <>
       <p>
         Lead Coach and Finance Lead positions are managed in Team Hub.
-        Two distinct people must approve each revision. This page manages only
+        Two different people must approve each submission. This page manages only
         school submission and Finance administration access.
       </p>
       <p><a href="https://team.frc4418.org/#team-management">Manage team positions in Team Hub →</a></p>

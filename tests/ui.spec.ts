@@ -244,7 +244,7 @@ for (const width of [390, 1440])
     ).toBeVisible();
     expect(calls.map((c) => c.action)).toEqual(["approve", "school_submit"]);
     await expect(
-      page.getByRole("button", { name: "Edit / revise" }),
+      page.getByRole("button", { name: "Edit purchase order" }),
     ).toHaveCount(0);
     await page
       .getByRole("dialog")
