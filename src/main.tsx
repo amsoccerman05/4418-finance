@@ -56,6 +56,20 @@ function App() {
     [editing, setEditing] = useState<PO | "new" | null>(null),
     [admin, setAdmin] = useState(false),
     [recovery, setRecovery] = useState(false);
+  const linkedPO = useRef(/^#po\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] || null);
+  useEffect(() => {
+    if (!data) return;
+    const openLink = (id: string | null) => {
+      if (!id) return;
+      const visible = data.orders.some(order => order.id === id);
+      setSelected(visible ? id : null);
+      if (!visible) setMessage('This purchase order is unavailable or your account does not have access.');
+    };
+    openLink(linkedPO.current); linkedPO.current = null;
+    const changed = () => openLink(/^#po\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] || null);
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, [data]);
   const generation = useRef(0);
   useEffect(() => {
     if (!client) return;

@@ -319,3 +319,10 @@ test("signed out users see sign-in", async ({page}) => {
   await page.goto("/");
   await expect(page).toHaveURL("https://team.frc4418.org/");
 });
+for(const width of [390,1440])test(`email deep link opens only a loaded permitted PO ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {orders}=await mock(page);const id='10000000-0000-0000-0000-000000000027';
+ orders.push({id,po_number:27,requester_id:student,area_id:'area',vendor:'Linked supplier',amount:125.5,purpose:'Replacement motor',sheet_url:'https://docs.google.com/spreadsheets/d/PO123/edit',status:'awaiting_approval',revision:1,version:1,notes:'',created_at:'2026-09-12T00:00:00Z',updated_at:'2026-09-12T00:00:00Z'});
+ await page.goto('/#po/'+id);await expect(page.getByRole('dialog',{name:'PO 27',exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.goto('/#po/10000000-0000-0000-0000-000000000099');await expect(page.getByText('Welcome, Alex Student')).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+});
