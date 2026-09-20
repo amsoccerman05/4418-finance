@@ -92,6 +92,7 @@ ${Object.entries(ids)
   );
   await db.exec("grant select on public.profiles to authenticated");
   await db.exec(readFileSync("tests/fixtures/team_management_positions.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/202609200001_finance_budget_core.sql", "utf8"));
   await as("admin");
   for (const [who,position_key] of [["finance","finance_lead"],["po","lead_coach_1"],["coach2","lead_coach_2"]] as const) {
     await db.query("select public.team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids[who],position_key,reason:"Season assignment"})]);

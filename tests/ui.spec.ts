@@ -53,7 +53,9 @@ async function mock(page: Page, capabilities: string[] = [], isAdmin = false) {
         body = route.request().postDataJSON();
       } catch {}
       let data: any = [];
-      if (path.endsWith("/finance_context")) data = context;
+      if(path.endsWith("/finance_budget_context")) data={can_manage:false};
+      else if(path.endsWith("/finance_budget_approval")) data={required:false,categories:[]};
+      else if (path.endsWith("/finance_context")) data = context;
       else if (path.endsWith("/finance_purchase_orders")) data = orders;
       else if (path.endsWith("/finance_po_approvals")) data = approvals;
       else if (path.endsWith("/finance_po_history")) data = history;
@@ -152,7 +154,7 @@ for (const width of [390, 1440])
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const { calls } = await mock(page);
-    await page.goto("/");
+    await page.goto("/#orders");
     await page.getByRole("button", { name: "New purchase order" }).click();
     const dialog = page.getByRole("dialog");
     await dialog
@@ -175,7 +177,7 @@ for (const width of [390, 1440])
       dialog.getByText("Awaiting Approval", { exact: true }),
     ).toBeVisible();
     await expect(
-      dialog.getByRole("button", { name: "Approve Finance Lead" }),
+      dialog.getByRole("button", { name: "Approve & assign budget" }),
     ).toHaveCount(0);
     expect(calls.map((c) => c.action)).toEqual(["create", "submit"]);
     expect(
@@ -225,10 +227,10 @@ for (const width of [390, 1440])
       acted_at: new Date().toISOString(),
       explanation: "",
     });
-    await page.goto("/");
+    await page.goto("/#orders");
     await page.getByRole("button", { name: /Robot Supplier/ }).click();
     await page
-      .getByRole("button", { name: "Approve Finance Lead", exact: true })
+      .getByRole("button", { name: "Approve & assign budget", exact: true })
       .click();
     await expect(
       page.getByRole("button", { name: "Mark submitted to school" }),
@@ -272,7 +274,7 @@ test("failed approval action keeps error visible in dialog; search and filters r
     school_reference: "",
     notes: "",
   });
-  await page.goto("/");
+  await page.goto("/#orders");
   await page.getByRole("button", { name: /Robot Supplier/ }).click();
   await page
     .getByRole("button", { name: "Request changes", exact: true })
@@ -302,7 +304,7 @@ for (const code of ["42501", "PGRST202"]) {
   test(`initial RPC error settles loading: ${code}`, async ({ page }) => {
     await mock(page);
     await page.route("**/rpc/finance_context", route => route.fulfill({status: code === "42501" ? 403 : 404, json: {code, message:"Fixture RPC error"}}));
-    await page.goto("/");
+    await page.goto("/#orders");
     await expect(page.getByRole("heading", {name: code === "42501" ? "Finance access denied" : "Finance could not load"})).toBeVisible();
     await expect(page.getByText("Loading Finance…")).toHaveCount(0);
   });
@@ -310,13 +312,13 @@ for (const code of ["42501", "PGRST202"]) {
 test("stalled data request has a bounded error state", async ({ page }) => {
   await mock(page);
   await page.route("**/rpc/finance_context", () => new Promise(() => {}));
-  await page.goto("/");
+  await page.goto("/#orders");
   await expect(page.getByText("Finance data timed out. Reload to try again.")).toBeVisible({timeout:20000});
   await expect(page.getByText("Loading Finance…")).toHaveCount(0);
 });
 test("signed out users see sign-in", async ({page}) => {
  await page.route("https://team.frc4418.org/",r=>r.fulfill({contentType:"text/html",body:"<h1>Team sign in</h1>"}));
-  await page.goto("/");
+  await page.goto("/#orders");
   await expect(page).toHaveURL("https://team.frc4418.org/");
 });
 for(const width of [390,1440])test(`email deep link opens only a loaded permitted PO ${width}`,async({page})=>{
@@ -324,5 +326,5 @@ for(const width of [390,1440])test(`email deep link opens only a loaded permitte
  orders.push({id,po_number:27,requester_id:student,area_id:'area',vendor:'Linked supplier',amount:125.5,purpose:'Replacement motor',sheet_url:'https://docs.google.com/spreadsheets/d/PO123/edit',status:'awaiting_approval',revision:1,version:1,notes:'',created_at:'2026-09-12T00:00:00Z',updated_at:'2026-09-12T00:00:00Z'});
  await page.goto('/#po/'+id);await expect(page.getByRole('dialog',{name:'PO 27',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
- await page.goto('/#po/10000000-0000-0000-0000-000000000099');await expect(page.getByText('Welcome, Alex Student')).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.goto('/#po/10000000-0000-0000-0000-000000000099');await expect(page.getByRole('heading',{name:'Purchase orders',exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
 });

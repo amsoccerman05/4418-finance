@@ -1,3 +1,5 @@
+import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspaces } from './BudgetWorkspace';
+import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
 import {
@@ -45,6 +47,9 @@ function bounded<T>(work: PromiseLike<T>, message: string, ms = 15000): Promise<
 const loadFinance = () => bounded(load(), "Finance data timed out. Reload to try again.");
 type Run = (work: () => Promise<unknown>, message?: string) => Promise<void>;
 function App() {
+  const [workspace,setWorkspace]=useState(currentWorkspace);
+  const [canBudget,setCanBudget]=useState(false);
+  useEffect(()=>{const changed=()=>setWorkspace(currentWorkspace());window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed)},[]);
   const [data, setData] = useState<Data | null>(null),
     [signed, setSigned] = useState(false),
     [loading, setLoading] = useState(!!client),
@@ -70,6 +75,7 @@ function App() {
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, [data]);
+  useEffect(()=>{let alive=true;setCanBudget(false);if(data)void loadBudget().then(b=>{if(alive)setCanBudget(b.can_manage===true)}).catch(()=>{});return()=>{alive=false}},[data]);
   const generation = useRef(0);
   useEffect(() => {
     if (!client) return;
@@ -150,10 +156,11 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Finance" context="Purchase orders" name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
+      <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
 
+      <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
       <main id="main">
-        <div className="page-heading">
+        {workspace==='orders'&&<div className="page-heading">
           <div>
             <span className="eyebrow">TEAM 4418 / FINANCE</span>
             <h1>Purchase orders</h1>
@@ -167,6 +174,7 @@ function App() {
             </button>
           )}
         </div>
+        }
         {!client ? (
           <div className="panel">
             Finance setup is pending. Configure the shared public Supabase
@@ -271,25 +279,8 @@ function App() {
               </form>
             ) : data ? (
               <>
-                <div className="toolbar">
-                  <span>Welcome, {data.context.profile.display_name}</span>
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => void run(async () => {}, "Refreshed")}
-                  >
-                    Refresh
-                  </button>
-                  {data.context.is_admin && (
-                    <button
-                      className="secondary"
-                      onClick={() => setAdmin(true)}
-                    >
-                      Finance assignments
-                    </button>
-                  )}
-                </div>
-                <Overview data={data} onOpen={setSelected} />
+                <div className="toolbar"><button className="secondary" disabled={busy} onClick={()=>void run(async()=>{},'Refreshed')}>Refresh</button></div>
+                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
               </>
             ) : (
               <div className="panel">
@@ -352,7 +343,7 @@ function App() {
         <footer>
           4418 IMPULSE · Google Sheets remains the authoritative purchase order.
         </footer>
-      </main>
+      </main></div>
     </>
   );
 }
@@ -870,11 +861,13 @@ function Detail({
                           slot,
                           reason: f.reason,
                           override_reason: f.override_reason,
+                          category_id:f.category_id, budget_reason:f.budget_reason,
                         }),
                       "Approval action recorded",
                     );
                   }}
                 >
+                  {slot==='finance_approver'&&<ApprovalCoding po={p}/>}
                   <label>
                     Explanation / requested changes
                     <textarea name="reason" maxLength={2000} />
@@ -893,7 +886,7 @@ function Detail({
                   <div className="toolbar">
                     {!approved(d, p, slot) && !alreadyActed && (
                       <button className="primary" value="approve">
-                        Approve {slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}
+                        {slot === "finance_approver" ? "Approve & assign budget" : "Approve Lead Coach"}
                       </button>
                     )}
                     <button className="secondary" value="request_changes">
