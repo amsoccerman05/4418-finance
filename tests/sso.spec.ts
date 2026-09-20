@@ -71,7 +71,8 @@ test("Finance uses real Hub broker protocol: one login, cross-origin session and
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("Shared session ready")).toBeVisible();
   await page.goto("https://finance.frc4418.org/");
-  await expect(page.getByText("Welcome, Suite Student")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page.getByRole("banner").getByText("Suite Student", { exact: true })).toBeVisible();
   expect(logins).toBe(1);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   const hub = await context.newPage();

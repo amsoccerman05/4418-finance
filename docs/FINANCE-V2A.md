@@ -21,11 +21,11 @@ A PO contributes its current amount to exactly one bucket. Revisions, cancellati
 
 All amounts are USD numeric(14,2). Expected income is planning only. Actual funding = starting funds + received income. Restricted received income automatically funds only its designated category; it is never in general Unallocated. Editable category allocation is the **unrestricted allocation**. Category funded allocation = unrestricted allocation + restricted received income. Total allocated sums these funded allocations. Unallocated = starting funds + unrestricted received income − unrestricted allocations. Expected restricted income is shown separately and does not fund a category yet.
 
-Category available = funded allocation − Requested − Committed − net Spent. Net Spent = school-submitted POs + manual expenses − credits. Overall available funding uses the same impact subtraction from actual funding, including uncategorized associated POs. Expected funding and reserve are never silently added/subtracted. Negative availability warns rather than prohibiting legitimate purchases. Reserve is a warning only. Transfers move unrestricted allocations only; restricted funding cannot be transferred into the general pool. Negative unallocated during planning is visible; transfers from Unallocated require actual unallocated funds.
+Category available = allocation + restricted received income − Requested − Committed − gross Spent + credits. Gross Spent = school-submitted POs + manual expenses. Equivalently, category available = funded allocation − Requested − Committed − net Spent. The reporting field `spent` is already net of credits; do not add credits a second time when using that field. Net Spent = school-submitted POs + manual expenses − credits. Overall available funding uses the same impact subtraction from actual funding, including uncategorized associated POs. Expected funding and reserve are never silently added/subtracted. Negative availability warns rather than prohibiting legitimate purchases. Reserve is a warning only. Transfers move unrestricted allocations only; restricted funding cannot be transferred into the general pool. Negative unallocated during planning is visible; transfers from Unallocated require actual unallocated funds.
 
 ## Season boundaries and legacy POs
 
-No backfill. On the next submit/approval/school-submit action, an unassociated PO is bound to the then-active season, if any. Binding never changes automatically. Before any Finance-slot approval on a bound/active-season PO, category selection is mandatory, including mentor overrides; Coach approval never requires coding. Without an active or previously bound season V1 remains operational. Authorized budget leaders can explicitly categorize legacy POs into an open season; once associated they cannot move seasons. Archived categories retain history but cannot receive new coding. Closed seasons reject financial mutations; close requires no unfinished bound POs (including draft/changes-requested), preventing active purchasing from becoming stranded. No exceptional closed-season correction path in V2A; no automatic rollover.
+No backfill. On the next submit/approval/school-submit action, an unassociated PO is bound to the then-active season, if any. Binding never changes automatically. Before any Finance-slot approval on a bound/active-season PO, category selection is mandatory, including mentor overrides; Coach approval never requires coding. Without an active or previously bound season V1 remains operational. Authorized budget leaders can explicitly categorize legacy POs into an open season; once associated they cannot move seasons. Archived categories retain history but cannot receive new coding. Closed seasons reject financial mutations; close requires no unfinished bound POs (including draft/changes-requested), preventing active purchasing from becoming stranded. Only `cancelled` and `submitted_to_school` are resolved for closing; drafts, awaiting approval, changes requested and approved POs block closing. No exceptional close override is necessary: the existing workflow permits unresolved POs to be completed or canceled. No override or closed-season correction path is added; no automatic rollover.
 
 ## Authorization and audit
 
@@ -33,9 +33,9 @@ Active mentors/admins retain full budget authority. Active student/lead accounts
 
 All budget mutations serialize with a Finance budget advisory lock and use season-level optimistic versioning. PO workflow mutations take the same lock and increment the bound season version. All budget writes and audit records commit atomically. Existing Finance history is extended with nullable season/category references; no second audit store. Budget actions do not match notification actions and do not enqueue emails.
 
-## Review decisions
+## Final model decisions (confirmed)
 
-Confirm the operational definitions above before deployment: school submission means Spent; changes-requested releases Requested; restricted receipts automatically augment their category; general allocations exclude restricted money; close requires an empty unfinished PO pipeline. Credits may exceed spending and produce negative net Spent (visible, never clamped).
+The final decisions are implemented without migration changes: school submission means Spent; changes-requested releases Requested; restricted receipts automatically augment their category; general allocations exclude restricted money; close requires an empty unfinished PO pipeline. Credits may exceed spending and produce negative net Spent (visible, never clamped).
 
 ## Files and local review
 
@@ -43,7 +43,7 @@ Local checkout: `/Users/aiden/Documents/GitHub/4418-finance-v2a`, branch `featur
 
 ## Manual rollout, after model approval (not executed)
 
-1. Review this financial contract, tests and migration. In particular approve the restricted-funding/allocation distinction and school-submitted = operational Spent.
+1. Review the migration against the confirmed financial contract above. No financial-model decision remains outstanding for the specified formulas or closing rules.
 2. Run `docs/FINANCE-V2A-PREFLIGHT.sql` read-only on production. Compare current signatures and audit trigger with this inspection. Confirm the old public mutation is `(text,jsonb) returns uuid`, Team Positions exist, and no pre-existing `finance_private.mutate_v1` conflicts. The migration moves the installed function unchanged; it does not replace its workflow body with an older copy.
 3. Take the standard database backup. Apply **only** `202609200001_finance_budget_core.sql` once in the SQL editor, as one transaction. No historical financial backfill, seed data, notifications, or other migrations.
 4. Before the frontend, verify a manager can call `finance_budget_context()` and an ordinary student gets `can_manage:false`; inspect the grant/revoke results and active-position classifications. Do not send real approvals or notification emails as a smoke test. With no active season, legacy PO actions retain V1 behavior.
@@ -63,3 +63,15 @@ Income type is a free-text label, not a new configuration subsystem. Categories 
 - Physical iPhone Safari verification remains a manual rollout check; shared Suite Auth/header files are unchanged.
 
 Changed files: `src/main.tsx`, `src/BudgetWorkspace.tsx`, `src/budget-service.ts`, `src/budget.css`; `supabase/migrations/202609200001_finance_budget_core.sql`; `tests/budget-db.spec.ts`, `tests/budget-ui.spec.ts`, `tests/database.spec.ts`, `tests/notification-db.spec.ts`, `tests/ui.spec.ts`; this document and `FINANCE-V2A-PREFLIGHT.sql`.
+
+## Final-decision verification
+
+Eight focused financial-model tests passed after confirming the final decisions. Assertions explicitly cover expected income exclusion, restricted receipts benefiting only their assigned category, and category credits counted exactly once. No migration or implementation changes were required; no migration was applied and nothing was deployed.
+
+## Production backend rollout — 2026-09-20
+
+Preflight matched the reviewed production assumptions immediately before application. Verified native pg_dump backup: `/Users/aiden/Documents/IMPULSE-backups/2026-09-20-finance-v2a-pre-migration/production.dump` (checksum and recovery notes alongside). Applied only `202609200001_finance_budget_core.sql` once, in its BEGIN/COMMIT transaction.
+
+Post-migration read-only checks: all 5 active mentors and 2 active admins receive budget context; the ordinary student receives `can_manage:false`. All 11 intended student-leadership keys are classified. No student currently holds a designated leadership assignment in production; active/revoked/archived/inactive assignment behavior and Finance Lead capability independence are covered by focused database tests. Existing PO, revision, approval, assignment and history record fingerprints are unchanged; the installed V1 mutation body and every other pre-existing application function are unchanged, as is the Finance history notification trigger. Budget tables have RLS and the private V1 mutation is not callable by authenticated clients. Zero seasons exist. No financial smoke-test writes or emails were sent.
+
+The earlier local-only/application-pending notes above describe the review stage; this entry records the completed backend rollout. Frontend deployment is tracked separately by its GitHub Pages workflow.

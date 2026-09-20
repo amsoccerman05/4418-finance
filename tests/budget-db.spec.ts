@@ -230,6 +230,7 @@ test("only one active, explicit activation and closed mutations rejected", async
 });
 test("expected/received/canceled restricted income and funds remain separate", async () => {
   const { s, cat } = await season();
+  const otherCategory = await manage(s, "category", {name:"Travel",allocation:0});
   let id = await manage(s, "income", {
     source: "Sponsor",
     income_type: "Sponsorship",
@@ -244,6 +245,7 @@ test("expected/received/canceled restricted income and funds remain separate", a
     unallocated: 300,
     available: 1000,
   });
+  expect(q.categories.find((c: any) => c.id === cat).available).toBe(700);
   await manage(s, "income", {
     id,
     source: "Sponsor",
@@ -262,7 +264,8 @@ test("expected/received/canceled restricted income and funds remain separate", a
     unallocated: 300,
     available: 1500,
   });
-  expect(q.categories[0].funded).toBe(1200);
+  expect(q.categories.find((c: any) => c.id === cat)).toMatchObject({funded:1200,available:1200});
+  expect(q.categories.find((c: any) => c.id === otherCategory)).toMatchObject({restricted:0,funded:0,available:0});
   await manage(s, "income", {
     source: "Donation",
     income_type: "Other",
@@ -473,6 +476,7 @@ test("manual expenses and credits affect net spent only and preserve references"
     credits: 40,
     available: 840,
   });
+  expect((await summary(s)).categories[0]).toMatchObject({allocation:700,spent:160,available:540});
   await expect(
     manage(s, "expense", {
       category_id: cat,
