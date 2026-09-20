@@ -156,12 +156,12 @@ for (const width of [390, 1440]) {
     const { calls } = await fixture(page);
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: "Dashboard", exact: true }),
+      page.getByRole("heading", { name: "2026–27 Finance", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByText("Expected income · planning only"),
     ).toBeVisible();
-    await expect(page.getByText("$1,100.00", { exact: true })).toBeVisible();
+    await expect(page.locator(".available-hero").getByText("$1,100.00", { exact: true })).toBeVisible();
     await nav(page, "Budget");
     await expect(
       page.getByRole("heading", { name: "Categories", exact: true }),
@@ -295,7 +295,10 @@ test("blank season setup is available with no existing budget", async ({
   const { budget, calls } = await fixture(page);
   budget.seasons = [];
   budget.summary = null;
-  await page.goto("/#budget");
+  await page.goto("/");
+  await expect(page.getByRole("heading", {name:"Dashboard",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading", {name:"No active budget"})).toBeVisible();
+  await nav(page,"Budget");
   await expect(
     page.getByRole("heading", { name: "No active budget" }),
   ).toBeVisible();
@@ -313,7 +316,7 @@ for (const width of [390, 1440]) test(`draft builder and progressive income ${wi
  await page.setViewportSize({width,height:844});const {budget,calls}=await fixture(page);budget.summary.season.status="draft";
  await page.goto('/#budget');await expect(page.getByRole('heading',{name:'1. Funding',exact:true})).toBeVisible();
  await expect(page.getByLabel('Starting / rollover funds',{exact:true})).toBeVisible();
- await expect(page.getByLabel('Category name',{exact:true}).first()).toBeVisible();
+ await expect(page.getByLabel('Robot Parts category name',{exact:true})).toBeVisible();
  const funding=page.locator('details').filter({has:page.locator('summary',{hasText:'Starting funds & reserve'})});
  await funding.getByLabel('Starting / rollover funds',{exact:true}).fill('2500');await funding.getByRole('button',{name:'Save funding'}).click();
  await expect.poll(()=>calls.length).toBe(1);expect(calls[0]).toMatchObject({action:'season',p:{name:'2026–27',starting_funds:'2500',reserve_target:'100',version:1}});
@@ -333,4 +336,38 @@ for (const width of [390, 1440]) test(`draft builder and progressive income ${wi
  await page.getByLabel('Income status').selectOption('received');await expect(page.getByLabel('Received date',{exact:true})).toHaveValue('2026-10-02');
  await page.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);
  expect(calls[1]).toMatchObject({action:'income',p:{status:'received',expected_on:'2026-10-01',received_on:'2026-10-02'}});expect(calls[1].p).not.toHaveProperty('reason');
+ await nav(page,'Budget');await page.getByLabel('Robot Parts allocation',{exact:true}).fill('800');await page.getByLabel('Robot Parts forecast',{exact:true}).fill('750');await page.getByRole('button',{name:'Save category',exact:true}).click();await expect.poll(()=>calls.length).toBe(3);expect(calls[2]).toMatchObject({action:'category',p:{id:'parts',name:'Robot Parts',allocation:'800',forecast:'750',active:true,description:'Robot purchases',display_order:0}});
+});
+
+for(const width of [390, 900, 1440])test(`V2B populated charts and record tables ${width}`,async({page})=>{
+ await page.setViewportSize({width,height:900});const {budget,calls}=await fixture(page);
+ budget.po_links=[{po_id:'spent-po',po_number:14,vendor:'Supplier',category_id:'parts',amount:1000,revision:2,bucket:'spent',status:'submitted_to_school'}];
+ budget.history=[{id:2,po_id:'spent-po',revision:2,action:'school_submit',actor_name:'Mentor',created_at:'2026-08-15T12:00:00Z',details:{after:{school_submitted_at:'2026-08-15T12:00:00Z'}}},{id:1,po_id:'spent-po',revision:1,action:'school_submit',actor_name:'Mentor',created_at:'2026-07-01T12:00:00Z',details:{after:{school_submitted_at:'2026-07-01T12:00:00Z'}}}];
+ budget.expenses=[{id:'expense',kind:'expense',category_id:'parts',amount:50,payee:'Hardware store',occurred_on:'2026-09-01',reason:'Fasteners'},{id:'credit',kind:'credit',category_id:'parts',amount:100,payee:'Supplier',occurred_on:'2026-09-02',reason:'Returned spare'}];
+ budget.income=[{id:'sponsor',source:'Team sponsor',income_type:'Sponsorship',amount:500,status:'received',received_on:'2026-08-01',category_id:'parts',notes:'',reference:''},{id:'pledge',source:'Expected grant',income_type:'Grant',amount:200,status:'expected',expected_on:'2026-08-01',category_id:null,notes:'',reference:''}];
+ const c=budget.summary.categories[0];c.spent=950;c.available=150;budget.summary.spent=950;budget.summary.available=450;
+ budget.summary.categories.push({...c,id:'travel',name:'Travel',allocation:400,funded:400,restricted:0,spent:500,requested:0,committed:0,available:-100,forecast:null},{...c,id:'credit-category',name:'Credit balance',allocation:0,funded:0,restricted:0,spent:-25,requested:0,committed:0,available:25,forecast:null});
+ await page.goto('/');await expect(page.getByRole('heading',{name:'2026–27 Finance'})).toBeVisible();
+ await expect(page.getByRole('region',{name:'Category budget chart'})).toContainText('$100.00 over budget');await expect(page.getByText('$25.00 net credit',{exact:false})).toBeVisible();
+ await expect(page.getByRole('region',{name:'Monthly operational spending'})).toContainText('Aug 2026');await expect(page.getByRole('region',{name:'Monthly operational spending'})).not.toContainText('Jul 2026');
+ await expect(page.getByText('PO #14 submitted to school',{exact:true}).first()).toBeVisible();
+ const months=await page.evaluate(async(b)=>{const m=await import('/src/finance-reporting.ts');return m.spendingMonths({...b,po_links:[...b.po_links,{po_id:'pending',bucket:'requested',amount:8000},{po_id:'reserved',bucket:'committed',amount:9000}]},'','2026-09-20')},budget);
+ expect(months).toEqual({months:[{month:'2026-08',amount:1000},{month:'2026-09',amount:-50}],missing:0,outside:0});
+ await page.screenshot({path:`test-results/v2b-dashboard-${width}.png`,fullPage:true});
+ await nav(page,'Budget');await expect(page.getByRole('table',{name:'Category balances'})).toBeVisible();await expect(page.getByRole('table')).toContainText('Category totals');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/v2b-budget-${width}.png`,fullPage:true});
+ await nav(page,'Income');await expect(page.getByRole('table',{name:'Income records'})).toContainText('Team sponsor');await expect(page.getByLabel('Source / sponsor').first()).not.toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/v2b-income-${width}.png`,fullPage:true});
+ await page.getByRole('button',{name:'Edit Team sponsor',exact:true}).click();await expect(page.getByLabel('Received date',{exact:true}).last()).toBeVisible();
+ const editor=page.locator('.editor-row');await editor.getByLabel('Amount',{exact:true}).fill('600');await editor.getByLabel('Reason for change').fill('Correct sponsor amount');await editor.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(1);expect(calls[0]).toMatchObject({action:'income',p:{id:'sponsor',amount:'600',status:'received',reason:'Correct sponsor amount'}});
+ await nav(page,'Expenses');await expect(page.getByRole('table',{name:'Manual expenses and credits'})).toContainText('Returned spare');await page.getByText('+ Add expense',{exact:true}).click();
+ const form=page.locator('details.budget-editor').filter({has:page.locator('summary',{hasText:'+ Add expense'})});await form.getByLabel('Amount',{exact:true}).fill('25');await form.getByLabel('Vendor / payee').fill('Shop');await form.getByLabel('Date',{exact:true}).fill('2026-09-20');await form.getByLabel('Reason / notes').fill('Consumables');await form.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);expect(calls[1].action).toBe('expense');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await nav(page,'Reports');await expect(page.getByRole('region',{name:'Category budget chart'})).toBeVisible();await page.getByLabel('Chart category').selectOption('parts');await expect(page.getByRole('region',{name:'Category budget chart'})).not.toContainText('Travel');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('V2B empty season and missing dates stay honest',async({page})=>{
+ const {budget}=await fixture(page);budget.summary.categories=[];budget.summary.spent=0;budget.po_links=[{po_id:'undated',category_id:null,amount:10,bucket:'spent',revision:1}];
+ await page.goto('/#reports');await expect(page.getByText('No active categories to show yet.')).toBeVisible();await expect(page.getByText('No dated spending recorded yet.')).toBeVisible();await expect(page.getByText('1 record(s) lack a verified spending date and are not plotted.')).toBeVisible();
+ const result=await page.evaluate(async(b)=>{const m=await import('/src/finance-reporting.ts');return m.spendingMonths({...b,expenses:[{kind:'expense',amount:50,occurred_on:'2099-01-01'}]},'','2026-09-20')},budget);expect(result.missing).toBe(1);expect(result.outside).toBe(1);expect(result.months).toEqual([]);
 });

@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode, type FormEvent } from "react";
+import { Analytics, RecentActivity } from "./FinanceAnalytics";
+import { BudgetRows } from "./FinanceBudgetRows";
+import { Fragment, useEffect, useState, type ReactNode, type FormEvent } from "react";
 import {
   LayoutDashboard,
   FileText,
@@ -247,7 +249,8 @@ export function BudgetWorkspace({
 }) {
   const [budget, setBudget] = useState<Budget | null>(null),
     [season, setSeason] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [editingIncome, setEditingIncome] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     setError("");
@@ -337,40 +340,15 @@ export function BudgetWorkspace({
     input("notes", "Notes", i?.notes),
     ...(i || s?.status === "active" ? [why] : []),
   ];
+  const attention = data.orders.filter(p=>needsMe(data,p)||(p.status==='approved'&&(data.context.capabilities.includes('school_submitter')||['mentor','admin'].includes(data.context.profile.role))));
+  const exceptions = cats.filter(c=>c.active&&(c.available<0||(c.funded>0&&c.available/c.funded<=0.1)));
+  const overdue = budget?.income?.filter(i=>i.status==='expected'&&i.expected_on&&i.expected_on<new Date().toISOString().slice(0,10)) || [];
+  const attentionPanel = attention.length > 0 ? <section className="panel attention-panel"><h2>Needs attention</h2><ul>{attention.map((p)=><li key={p.id}><button className="secondary" onClick={()=>openPO(p.id)}>PO {p.po_number} · {p.vendor} · {p.status === 'approved' ? 'Submit to school' : 'Review purchase'}</button></li>)}</ul></section> : null;
   return (
     <section className="budget-workspace" key={`${s?.id}-${s?.version}`}>
-      <h1>{workspaces.find(([id]) => id === page)?.[1]}</h1>
+      <header className="finance-page-title"><h1>{page === "dashboard" && s ? `${s.name} Finance` : workspaces.find(([id]) => id === page)?.[1]}</h1>{s && <span className={`finance-badge ${s.status}`}>{label(s.status)}</span>}</header>
       {error && <p role="alert">{error}</p>}
-      {page === "dashboard" && (
-        <section className="panel">
-          <h2>Needs your attention</h2>
-          {data.orders
-            .filter(
-              (p) =>
-                needsMe(data, p) ||
-                (p.status === "approved" &&
-                  (data.context.capabilities.includes("school_submitter") ||
-                    ["mentor", "admin"].includes(data.context.profile.role))),
-            )
-            .map((p) => (
-              <button
-                key={p.id}
-                className="secondary"
-                onClick={() => openPO(p.id)}
-              >
-                PO {p.po_number} · {p.vendor} · {p.status === "approved" ? "Submit to school" : "Review purchase"}
-              </button>
-            ))}
-          {!data.orders.some(
-            (p) =>
-              needsMe(data, p) ||
-              (p.status === "approved" &&
-                (data.context.capabilities.includes("school_submitter") ||
-                  ["mentor", "admin"].includes(data.context.profile.role))),
-          ) && <p>No purchase orders need your action.</p>}
-          <a href="#orders">View purchase orders</a>
-        </section>
-      )}
+      {page === "dashboard" && !budget?.can_manage && attentionPanel}
       {!budget && !error && <p role="status">Loading Finance…</p>}
       {budget &&
         !budget.can_manage &&
@@ -444,28 +422,16 @@ export function BudgetWorkspace({
           )}
           {s && (
             <>
-              <p>
+              {page !== "dashboard" && <p>
                 <strong>{s.name}</strong> · {label(s.status)}
                 {s.status === "closed" && " · Historical records are read-only"}
-              </p>
+              </p>}
               {page === "dashboard" && <p className="workspace-links"><a href="#budget">{s.status === "draft" ? "Continue budget setup" : "View category balances"}</a><a href="#income">Track income</a><a href="#expenses">Other spending & credits</a></p>}
-              {["dashboard", "reports"].includes(page) && b && (
-                <Totals b={b} brief={page === "dashboard"} />
-              )}
-              {page === "dashboard" && (
-                <section className="panel">
-                  <h2>Recent Finance activity</h2>
-                  {budget.history.slice(0, 8).map((h) => (
-                    <p key={h.id}>
-                      {label(h.action.replace("budget_", ""))} · {h.actor_name}{" "}
-                      · {when(h.created_at)}
-                    </p>
-                  ))}
-                  {budget.history.length === 0 && (
-                    <p>No budget activity yet.</p>
-                  )}
-                </section>
-              )}
+              {(page === 'dashboard' || page === 'reports') && <Analytics key={s.id} budget={budget} reports={page==='reports'}>{page==='dashboard' && attentionPanel}</Analytics>}
+              {page === 'dashboard' && <>
+                {(exceptions.length>0||overdue.length>0)&&<section className="panel attention-panel"><h2>Budget watch</h2><ul>{exceptions.map(c=><li key={c.id}><a href="#budget">{c.name}</a> · {c.available<0?`${money(-c.available)} over budget`:`${money(c.available)} available · 10% or less remaining`}</li>)}{overdue.map(i=><li key={i.id}><a href="#income">{i.source}</a> · {money(i.amount)} expected on {i.expected_on}</li>)}</ul><small>Planning reminders only; these do not block purchases.</small></section>}
+                <RecentActivity budget={budget}/>
+              </>}
               {page === "budget" && (
                 <>
                   {s.status === "draft" ? <>
@@ -483,7 +449,7 @@ export function BudgetWorkspace({
                     </section>
                     <h2>2. Categories & allocations</h2>
                   </> : <><h2>Category balances</h2><p>See what is planned, reserved and spent across your team.</p></>}
-                  {b && <><Totals b={b}/><p className="allocation-progress"><strong>{money(b.allocated)} allocated</strong> · {money(b.unallocated)} unallocated{s.status === "draft" && " — ready to assign or keep aside"}</p></>}
+                  {b && <>{s.status === "draft" && <Totals b={b}/>}<p className="allocation-progress"><strong>{money(b.allocated)} allocated</strong> · {money(b.unallocated)} unallocated{s.status === "draft" && " — ready to assign or keep aside"}</p></>}
                   <h2>Categories</h2>
                   <details className="budget-help"><summary>Allocation and restricted funding</summary><p>Your allocation uses general team funds. Received restricted income adds funding only to its assigned category. Team areas describe responsibility, not budget categories.</p></details>
                   {!cats.length && (
@@ -491,44 +457,8 @@ export function BudgetWorkspace({
                       No categories yet. Build the plan that fits your team.
                     </p>
                   )}
-                  {cats.map((c) => (
-                    <article className="panel" key={`${c.id}-${s.version}`}>
-                      <h3>
-                        {c.name}
-                        {!c.active && " · Archived"}
-                      </h3>
-                      <p>{c.description}</p>
-                      <dl className="budget-totals compact">
-                        {[
-                          ["Funded allocation", c.funded],
-                          ["Restricted received", c.restricted],
-                          ...(s.status === "draft" ? [] : [["Requested", c.requested], ["Committed", c.committed], ["Spent", c.spent], ["Category available", c.available]]),
-                          ...(c.forecast === null
-                            ? []
-                            : [["Forecast", c.forecast]]),
-                        ].map(([k, v]) => (
-                          <div key={String(k)}>
-                            <dt>{k}</dt>
-                            <dd>{money(v as number)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                      {editable && (
-                        <Editor
-                          title={`Edit ${c.name}`}
-                          initiallyOpen={s.status === "draft"}
-                          fields={categoryFields(c)}
-                          save={(p) =>
-                            save("category", {
-                              ...p,
-                              id: c.id,
-                              active: p.active === "true",
-                            })
-                          }
-                        />
-                      )}
-                    </article>
-                  ))}
+                  {b && cats.length>0 && <BudgetRows b={b} draft={s.status==='draft'} editable={!!editable} save={p=>save('category',p)} editor={c=><Editor title={`Edit ${c.name}`} initiallyOpen fields={categoryFields(c)} save={p=>save('category',{...p,id:c.id,active:p.active==='true'})}/>}/>}
+                  {b && s.status !== "draft" && <p className="muted">Category totals exclude uncategorized POs. Season totals on Dashboard include them and unallocated funding.</p>}
                   {editable && (
                     <>
                       <Editor
@@ -644,28 +574,7 @@ export function BudgetWorkspace({
                       save={(p) => save("income", p)}
                     />
                   )}{" "}
-                  {budget.income.map((i) => (
-                    <article className="panel" key={`${i.id}-${s.version}`}>
-                      <h3>
-                        {i.source} · {money(i.amount)}
-                      </h3>
-                      <p>
-                        {i.income_type} · {label(i.status)} ·{" "}
-                        {i.category_id
-                          ? `Restricted to ${cats.find((c) => c.id === i.category_id)?.name}`
-                          : "Unrestricted"}
-                      </p>
-                      <p>{i.status === "received" ? i.received_on : i.status === "expected" ? i.expected_on || "No expected date" : "Canceled"}</p>
-                      {i.notes && <p>{i.notes}</p>}
-                      {editable && (
-                        <Editor
-                          title={`Edit ${i.source}`}
-                          fields={incomeFields(i)}
-                          save={(p) => save("income", { ...p, id: i.id })}
-                        />
-                      )}
-                    </article>
-                  ))}
+                  {!!budget.income.length && <table className="finance-table"><caption className="sr-only">Income records</caption><thead><tr><th>Source</th><th>Type</th><th>Status</th><th>Amount</th><th>Date</th><th>Restricted to</th><th/></tr></thead><tbody>{budget.income.map(i=><Fragment key={`${i.id}-${s.version}`}><tr><td data-label="Source"><strong>{i.source}</strong></td><td data-label="Type">{i.income_type}</td><td data-label="Status"><span className={`finance-badge ${i.status}`}>{label(i.status)}</span></td><td data-label="Amount">{money(i.amount)}</td><td data-label="Date">{i.status==='received'?i.received_on:i.status==='expected'?i.expected_on||'Not set':'—'}</td><td data-label="Restricted to">{cats.find(c=>c.id===i.category_id)?.name||'No restriction'}</td><td>{editable&&<button aria-expanded={editingIncome===i.id} onClick={()=>setEditingIncome(editingIncome===i.id?null:i.id)}>Edit <span className="sr-only">{i.source}</span></button>}</td></tr>{editingIncome===i.id&&<tr className="editor-row"><td colSpan={7}><Editor title={`Edit ${i.source}`} initiallyOpen fields={incomeFields(i)} save={p=>save('income',{...p,id:i.id})}/></td></tr>}</Fragment>)}</tbody></table>}
                 </>
               )}
               {page === "expenses" && (
@@ -733,33 +642,10 @@ export function BudgetWorkspace({
                         save={(p) => save(kind, p)}
                       />
                     ))}
-                  {budget.expenses.map((e) => (
-                    <article className="panel" key={e.id}>
-                      <h3>
-                        {e.kind === "credit"
-                          ? "Refund / credit"
-                          : "Manual expense"}{" "}
-                        · {money(e.amount)}
-                      </h3>
-                      <p>
-                        {e.payee} · {e.occurred_on} ·{" "}
-                        {cats.find((c) => c.id === e.category_id)?.name}
-                      </p>
-                      <p>{e.reason}</p>
-                    </article>
-                  ))}
+                  {!!budget.expenses.length && <table className="finance-table"><caption className="sr-only">Manual expenses and credits</caption><thead><tr><th>Type</th><th>Payee</th><th>Category</th><th>Date</th><th>Amount</th><th>Reason</th></tr></thead><tbody>{budget.expenses.map(e=><tr key={e.id}><td data-label="Type"><span className={`finance-badge ${e.kind}`}>{e.kind==='credit'?'Credit / refund':'Manual expense'}</span></td><td data-label="Payee">{e.payee||'—'}</td><td data-label="Category">{cats.find(c=>c.id===e.category_id)?.name}</td><td data-label="Date">{e.occurred_on}</td><td data-label="Amount">{money(e.amount)}</td><td data-label="Reason">{e.reason}</td></tr>)}</tbody></table>}
                 </>
               )}
-              {page === "reports" && (
-                <>
-                  <p>
-                    Reports and exports will use the same authoritative Finance
-                    records and totals shown here. Charts and Excel export are
-                    planned for later phases.
-                  </p>
-                  <h2>Budget history</h2>
-                </>
-              )}
+              {page === 'reports' && <p className="export-next">Finance workbook (.xlsx) — coming in V2C</p>}
               {(page === "reports" || page === "budget") && (
                 <details className="panel">
                   <summary>Budget history</summary>
@@ -900,7 +786,8 @@ export function BudgetWorkspace({
 export function ApprovalCoding({ po }: { po: PO }) {
   const [b, setB] = useState<ApprovalBudget | null>(null),
     [category, setCategory] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [editingIncome, setEditingIncome] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     void approvalBudget(po.id)

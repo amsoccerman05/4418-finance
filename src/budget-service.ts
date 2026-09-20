@@ -72,6 +72,8 @@ export type Budget = {
   expenses: Expense[];
   history: {
     id: number;
+    po_id?: string | null;
+    revision?: number;
     action: string;
     actor_name: string;
     created_at: string;
@@ -85,6 +87,8 @@ export type Budget = {
     amount: number;
     status: string;
     bucket: string;
+    revision?: number;
+    area_id?: string;
   }[];
   uncategorized: {
     po_id: string;
