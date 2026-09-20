@@ -21,6 +21,14 @@ export function createSuiteClient(
 ): SupabaseClient {
   if (!suiteOrigins.includes(location.origin))
     return createClient(url, key, fallback);
+  // A Hub-opened app talks to its first-party opener, not an isolated iframe.
+  // Referrer selects the transport; every reply still checks origin AND source.
+  const firstParty = location.origin !== hub && window.opener &&
+    document.referrer && new URL(document.referrer).origin === hub
+      ? window.opener as Window : null;
+  const children = new Map<Window, string>();
+  const methods = new Set(["getSession", "getUser", "signInWithPassword", "signOut",
+    "resetPasswordForEmail", "updateUser", "exchangeCodeForSession", "setSession"]);
   const frame = document.createElement("iframe");
   frame.src = hub + "/suite-auth.html";
   frame.hidden = true;
@@ -39,6 +47,7 @@ export function createSuiteClient(
   >();
   let session: Session | null = null;
   const ready = new Promise<void>((resolve, reject) => {
+    if (firstParty) { resolve(); return; }
     const timer = setTimeout(
       () =>
         reject(
@@ -62,7 +71,7 @@ export function createSuiteClient(
         reject(new Error("Team sign-in timed out. Reload or open Team Hub."));
       }, 20000);
       pending.set(id, { resolve, reject, timer });
-      frame.contentWindow!.postMessage({ protocol, id, method, args }, hub);
+      (firstParty || frame.contentWindow)!.postMessage({ protocol, id, method, args }, hub);
     });
   }
   const dataClient = createClient(url, key, {
@@ -77,11 +86,38 @@ export function createSuiteClient(
     void dataClient.realtime.setAuth(next?.access_token ?? key);
     if (!next) void dataClient.removeAllChannels();
     for (const cb of listeners) cb(event, next);
+    for (const [child, origin] of children) {
+      if (child.closed) { children.delete(child); continue; }
+      child.postMessage({ protocol, event, session: next }, origin);
+    }
   }
   window.addEventListener("message", (e) => {
+    // Only windows this Hub opened may use its broker. Pin each to the exact
+    // allowlisted destination origin; a navigated/unrelated window is rejected.
+    let childOrigin = children.get(e.source as Window);
+    // A Hub reload clears the registry. Reconnect only an allowlisted window
+    // whose browser-maintained opener is still this exact Hub window.
+    if (!childOrigin && location.origin === hub && e.origin !== hub && suiteOrigins.includes(e.origin)) {
+      try { if ((e.source as Window | null)?.opener === window) childOrigin = e.origin; } catch { /* unrelated window */ }
+    }
+    if (location.origin === hub && childOrigin && e.origin === childOrigin &&
+        e.data?.protocol === protocol && typeof e.data.id === "string" &&
+        e.data.id.length <= 100 && methods.has(e.data.method) && Array.isArray(e.data.args)) {
+      const source = e.source as Window, { id, method, args } = e.data;
+      children.set(source, childOrigin);
+      void request(method, args).then(result => {
+        // The existing Hub broker strips refresh/provider tokens from results.
+        if (!source.closed) source.postMessage({ protocol, id, result }, childOrigin);
+      }).catch(() => {
+        if (!source.closed) source.postMessage({ protocol, id, result: {
+          data: { session: null }, error: { message: "Team sign-in is unavailable. Open Team Hub." }
+        } }, childOrigin);
+      });
+      return;
+    }
     if (
       e.origin !== hub ||
-      e.source !== frame.contentWindow ||
+      e.source !== (firstParty || frame.contentWindow) ||
       e.data?.protocol !== protocol
     )
       return;
@@ -95,7 +131,23 @@ export function createSuiteClient(
     pending.delete(e.data.id);
     p.resolve(e.data.result);
   });
-  document.body.append(frame);
+  if (!firstParty) document.body.append(frame);
+  if (location.origin === hub) {
+    // One shared handler covers Quick access, the suite switcher and PO links.
+    // Open synchronously during the user gesture so mobile popup rules permit it.
+    document.addEventListener("click", e => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = (e.target as Element | null)?.closest<HTMLAnchorElement>("a[href]");
+      if (!link || link.hasAttribute("download")) return;
+      const destination = new URL(link.href);
+      if (destination.origin === hub || !suiteOrigins.includes(destination.origin) ||
+          destination.username || destination.password) return;
+      const child = window.open(destination.href, "_blank");
+      if (!child) return; // Respect browser blocking; retain the native link.
+      children.set(child, destination.origin);
+      e.preventDefault();
+    });
+  }
   const bootstrap = (async () => {
     const query = new URLSearchParams(location.search),
       hash = new URLSearchParams(location.hash.slice(1));
@@ -128,6 +180,27 @@ export function createSuiteClient(
     return result;
   })();
   void bootstrap.catch(() => emit("INITIAL_SESSION", null));
+  if (firstParty) {
+    // Reconnect after Hub reloads and clear access after it closes/logs out.
+    // These are broker messages only, not app data fetches or credential storage.
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        await bootstrap;
+        if (firstParty.closed) { if (session) emit("SIGNED_OUT", null); return; }
+        const result = await request("getSession");
+        if (result.error) return;
+        const next = result.data.session as Session | null;
+        if (next?.access_token !== session?.access_token)
+          emit(next ? "TOKEN_REFRESHED" : "SIGNED_OUT", next);
+      } catch { /* bounded request failure does not invent a signed-out session */ }
+      finally { checking = false; }
+    };
+    setInterval(() => void check(), 5000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) void check(); });
+  }
   const auth = {
     onAuthStateChange(
       cb: (event: AuthChangeEvent, session: Session | null) => void,
