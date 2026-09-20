@@ -428,7 +428,7 @@ export function BudgetWorkspace({
                 {s.status === "closed" && " · Historical records are read-only"}
               </p>}
               {page === "dashboard" && <p className="workspace-links"><a href="#budget">{s.status === "draft" ? "Continue budget setup" : "View category balances"}</a><a href="#income">Track income</a><a href="#expenses">Other spending & credits</a></p>}
-              {(page === 'dashboard' || page === 'reports') && <Analytics key={s.id} budget={budget} reports={page==='reports'}>{page==='dashboard' && attentionPanel}</Analytics>}
+              {(page === 'dashboard' || page === 'reports') && <Analytics key={`analytics-${s.id}`} budget={budget} reports={page==='reports'}>{page==='dashboard' && attentionPanel}</Analytics>}
               {page === 'dashboard' && <>
                 {(exceptions.length>0||overdue.length>0)&&<section className="panel attention-panel"><h2>Budget watch</h2><ul>{exceptions.map(c=><li key={c.id}><a href="#budget">{c.name}</a> · {c.available<0?`${money(-c.available)} over budget`:`${money(c.available)} available · 10% or less remaining`}</li>)}{overdue.map(i=><li key={i.id}><a href="#income">{i.source}</a> · {money(i.amount)} expected on {i.expected_on}</li>)}</ul><small>Planning reminders only; these do not block purchases.</small></section>}
                 <RecentActivity budget={budget}/>
@@ -646,7 +646,7 @@ export function BudgetWorkspace({
                   {!!budget.expenses.length && <table className="finance-table"><caption className="sr-only">Manual expenses and credits</caption><thead><tr><th>Type</th><th>Payee</th><th>Category</th><th>Date</th><th>Amount</th><th>Reason</th></tr></thead><tbody>{budget.expenses.map(e=><tr key={e.id}><td data-label="Type"><span className={`finance-badge ${e.kind}`}>{e.kind==='credit'?'Credit / refund':'Manual expense'}</span></td><td data-label="Payee">{e.payee||'—'}</td><td data-label="Category">{cats.find(c=>c.id===e.category_id)?.name}</td><td data-label="Date">{e.occurred_on}</td><td data-label="Amount">{money(e.amount)}</td><td data-label="Reason">{e.reason}</td></tr>)}</tbody></table>}
                 </>
               )}
-              {page === 'reports' && <FinanceExport key={s.id} season={s} />}
+              {page === 'reports' && <FinanceExport key={`export-${s.id}`} season={s} />}
               {(page === "reports" || page === "budget") && (
                 <details className="panel">
                   <summary>Budget history</summary>

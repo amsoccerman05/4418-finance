@@ -364,6 +364,7 @@ for(const width of [390, 900, 1440])test(`V2B populated charts and record tables
  const form=page.locator('details.budget-editor').filter({has:page.locator('summary',{hasText:'+ Add expense'})});await form.getByLabel('Amount',{exact:true}).fill('25');await form.getByLabel('Vendor / payee').fill('Shop');await form.getByLabel('Date',{exact:true}).fill('2026-09-20');await form.getByLabel('Reason / notes').fill('Consumables');await form.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);expect(calls[1].action).toBe('expense');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await nav(page,'Reports');await expect(page.getByRole('region',{name:'Category budget chart'})).toBeVisible();await page.getByLabel('Chart category').selectOption('parts');await expect(page.getByRole('region',{name:'Category budget chart'})).not.toContainText('Travel');
+ await nav(page,'Dashboard');await expect(page.getByRole('region',{name:'Category budget chart'})).toHaveCount(1);await expect(page.getByRole('region',{name:'Season financial summary'})).toHaveCount(1);await expect(page.getByLabel('Chart category')).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('V2B empty season and missing dates stay honest',async({page})=>{

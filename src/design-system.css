@@ -1,0 +1,27 @@
+/* IMPULSE Design System V2. Mirrored across suite repos; visual rules only. */
+:root{--suite-background:#f4f6f8;--suite-surface:#fff;--suite-secondary:#f8fafc;--suite-elevated:#fff;--suite-border:#dbe2e8;--suite-subtle:#edf1f5;--suite-ink:#182534;--suite-text:#293747;--suite-muted:#5d6b79;--suite-input-border:#a9b5c0;--suite-info-bg:#e8f3fc;--suite-primary:#006bb3;--suite-primary-hover:#00568f;--suite-success:#28623c;--suite-success-bg:#edf6ef;--suite-warning:#80651f;--suite-warning-bg:#fff6df;--suite-danger:#9c493f;--suite-danger-bg:#faece9;--sidebar-width:232px;--suite-header-height:76px;--page-max-width:1440px;--page-gutter:28px;--panel-padding:20px;--grid-gap:20px;--radius-card:10px;--radius-button:7px;--radius-input:7px;--radius-badge:5px;--suite-shadow:0 2px 8px #18253406;--suite-control-height:42px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px}
+body{background:var(--suite-background);color:var(--suite-text);font-size:14px;line-height:1.5}
+.suite-header{background:var(--suite-surface);border-color:var(--suite-border);color:var(--suite-text);font-family:var(--font-body,'DM Sans',sans-serif)}
+.suite-header button.suite-signout,.suite-header .suite-picker summary{font-family:inherit;border-color:var(--suite-input-border);border-radius:var(--radius-button)}
+.suite-header .suite-context>span,.suite-name{color:var(--suite-muted)}
+main h1{font-size:clamp(28px,2.4vw,34px);line-height:1.25;letter-spacing:-.8px}main h2{font-size:20px;line-height:1.35}main h3{font-size:16px;line-height:1.4}
+:is(.panel,.stat,.my-card,.analytics-panel,.area-card,.location-card,.att-card){border-color:var(--suite-border);border-radius:var(--radius-card);box-shadow:var(--suite-shadow);background:var(--suite-surface)}
+:is(.eyebrow,.nav-label,.nav-caption){color:var(--suite-muted);font-size:11px;font-weight:700;letter-spacing:.09em}
+:is(button,input,select,textarea){font-family:inherit}
+:is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea){border-color:var(--suite-input-border);border-radius:var(--radius-input)}
+:is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select){min-height:var(--suite-control-height)}
+:is(button,a,summary,input,select,textarea):focus-visible{outline:3px solid var(--suite-primary);outline-offset:3px}
+:is(.primary,.secondary,.my-primary-link){min-height:44px;border-radius:var(--radius-button)}
+:is(.sidebar nav button,.finance-nav a,.hub-nav a){min-height:44px;padding:11px 12px;gap:10px;font-size:14px;font-weight:550;border-radius:var(--radius-button);color:var(--suite-muted)}
+:is(.sidebar nav button.active,.sidebar nav button.selected,.finance-nav a[aria-current=page],.hub-nav a[aria-current=page]){background:var(--suite-info-bg);color:var(--suite-primary);font-weight:650}
+:is(.sidebar nav button,.finance-nav a,.hub-nav a):hover{background:var(--suite-info-bg)}
+:is(.sidebar nav,.finance-nav nav,.hub-nav nav) svg{width:18px;height:18px;flex-shrink:0}
+:is(.sidebar,.finance-nav,.hub-nav){background:var(--suite-surface);border-color:var(--suite-border)}
+th{background:var(--suite-secondary);color:var(--suite-muted);font-size:12px;font-weight:650}td,th{border-color:var(--suite-border)}tbody tr:hover{background:var(--suite-secondary)}
+:is(.badge,.my-pill){border-radius:var(--radius-badge);font-size:12px;font-weight:650}.my-pill{background:var(--suite-info-bg);padding:3px 8px}
+:is(.my-number,.stat strong){font-variant-numeric:tabular-nums;font-size:30px}
+@media(min-width:761px){.finance-layout{grid-template-columns:var(--sidebar-width) minmax(0,1fr);max-width:none}.finance-layout main{max-width:var(--page-max-width);margin:0 auto;padding:28px}.finance-nav{padding:24px 12px}.finance-nav nav{top:96px}.sidebar{width:var(--sidebar-width);padding:24px 12px 18px;top:var(--suite-header-height)}.sidebar .nav-caption,.sidebar .nav-label{margin:0 12px 16px}.sidebar nav{gap:4px}}
+@media(max-width:600px){:root{--suite-header-height:68px;--page-gutter:16px;--panel-padding:16px;--grid-gap:16px}input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px}.finance-layout main{padding:20px 16px}.suite-header{height:var(--suite-header-height)}}
+
+/* Native Safari selects otherwise ignore the shared control height. */
+select:not([multiple]){appearance:none;-webkit-appearance:none;min-height:var(--suite-control-height);padding:9px 34px 9px 12px;background-color:var(--suite-surface);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235d6b79' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;color:var(--suite-text)}
