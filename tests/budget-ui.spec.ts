@@ -371,3 +371,277 @@ test('V2B empty season and missing dates stay honest',async({page})=>{
  await page.goto('/#reports');await expect(page.getByText('No active categories to show yet.')).toBeVisible();await expect(page.getByText('No dated spending recorded yet.')).toBeVisible();await expect(page.getByText('1 record(s) lack a verified spending date and are not plotted.')).toBeVisible();
  const result=await page.evaluate(async(b)=>{const m=await import('/src/finance-reporting.ts');return m.spendingMonths({...b,expenses:[{kind:'expense',amount:50,occurred_on:'2099-01-01'}]},'','2026-09-20')},budget);expect(result.missing).toBe(1);expect(result.outside).toBe(1);expect(result.months).toEqual([]);
 });
+
+for (const [status, width] of [
+  ["draft", 1440],
+  ["active", 390],
+  ["closed", 1440],
+] as const) {
+  test(`Finance workbook download ${status} ${width}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const { budget } = await fixture(page);
+    budget.summary.season.status = status;
+    const category = budget.summary.categories[0];
+    category.spent = 300;
+    category.requested = 100;
+    category.committed = 50;
+    category.available = 750;
+    budget.summary.spent = 300;
+    budget.summary.committed = 50;
+    budget.summary.available = 1050;
+    budget.summary.credits = 20;
+    budget.expenses = [
+      {
+        id: "credit",
+        kind: "credit",
+        category_id: "parts",
+        amount: 20,
+        occurred_on: "2026-09-02",
+        payee: "",
+        reference: "",
+        reason: "Refund",
+        created_by: uid,
+        created_at: "2026-09-02T12:00:00Z",
+      },
+    ];
+    budget.income = [
+      {
+        id: "i",
+        source: '=HYPERLINK("https://example.invalid")',
+        income_type: "Grant",
+        amount: 500,
+        status: "received",
+        received_on: "2026-09-01",
+        expected_on: null,
+        category_id: "parts",
+        reference: "Grant",
+        notes: "Restricted",
+        created_by: uid,
+        created_at: "2026-09-01T12:00:00Z",
+      },
+    ];
+    budget.po_links = [
+      {
+        po_id: poid,
+        category_id: "parts",
+        amount: 320,
+        bucket: "spent",
+        revision: 2,
+      },
+      {
+        po_id: "missing",
+        category_id: "parts",
+        amount: 10,
+        bucket: "spent",
+        revision: 1,
+      },
+    ];
+    budget.history = [
+      {
+        id: 1,
+        po_id: poid,
+        action: "school_submit",
+        revision: 2,
+        actor_name: "Mentor",
+        created_at: "2026-09-02T12:00:00Z",
+        details: {
+          after: { school_submitted_at: "2026-09-02T12:00:00Z" },
+          reason: "School",
+        },
+      },
+      {
+        id: 2,
+        season_id: "season",
+        category_id: "parts",
+        action: "budget_category",
+        actor_name: "Mentor",
+        created_at: "2026-09-01T12:00:00Z",
+        details: {
+          before: { allocation: 600 },
+          after: { allocation: 700 },
+          reason: "Reviewed",
+        },
+      },
+    ];
+    const exported = {
+      generated_at: "2026-09-20T18:02:03.123Z",
+      budget,
+      purchase_orders: [
+        {
+          id: poid,
+          po_number: 42,
+          vendor: "Supplier",
+          purpose: "Motor",
+          requester: "Student",
+          functional_area: "Power",
+          category: "Robot Parts",
+          amount: 320,
+          revision: 2,
+          status: "submitted_to_school",
+          bucket: "spent",
+          submitted_at: "2026-09-01T12:00:00Z",
+          approved_at: null,
+          school_submitted_at: "2026-09-02T12:00:00Z",
+          school_reference: "School42",
+          updated_at: "2026-09-02T12:00:00Z",
+          approvals: [],
+        },
+      ],
+      people: { [uid]: "Mentor" },
+    };
+    let calls = 0;
+    await page.route("**/rpc/finance_workbook_context", async (r) => {
+      calls++;
+      expect(r.request().postDataJSON()).toEqual({ season: "season" });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await r.fulfill({ json: exported });
+    });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("/#reports");
+    const button = page.getByRole("button", {
+      name: "Download Finance Workbook (.xlsx)",
+      exact: true,
+    });
+    await expect(button).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await button.click();
+    await expect(
+      page.getByRole("button", { name: "Preparing workbook…" }),
+    ).toBeDisabled();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("4418_Finance_2026-27.xlsx");
+    const file = testInfo.outputPath("finance.xlsx");
+    await download.saveAs(file);
+    const { default: XlsxPopulate } = await import("xlsx-populate");
+    const wb = await XlsxPopulate.fromFileAsync(file);
+    expect(wb.sheets().map((s: any) => s.name())).toEqual([
+      "Executive Summary",
+      "Budget",
+      "Purchase Orders",
+      "Income",
+      "Expenses & Credits",
+      "Budget History",
+      "PO History",
+    ]);
+    expect(wb.sheet(0).cell("D4").value()).toBe(
+      status[0].toUpperCase() + status.slice(1),
+    );
+    expect(wb.sheet(0).cell("D5").value()).toBe(exported.generated_at);
+    expect(wb.sheet(0).cell("G9").value()).toBe(1500);
+    expect(wb.sheet(0).cell("G17").value()).toBe(200);
+    expect(wb.sheet(0).cell("G15").value()).toBe(1050);
+    expect(wb.sheet(1).range("C5:L5").value()[0]).toEqual([
+      700, 500, 1200, 650, 100, 50, 320, 20, 300, 750,
+    ]);
+    expect(wb.sheet(1).cell("M5").value()).toBe(0.375);
+    expect(wb.sheet(1).cell("C5").style("numberFormat")).toContain("$");
+    expect(wb.sheet(1).cell("M5").style("numberFormat")).toContain("%");
+    expect(wb.sheet(1).cell("A4").style("bold")).toBe(true);
+    expect(wb.sheet(2).cell("H5").value()).toBe(2);
+    expect(wb.sheet(2).cell("N5").value()).toBeUndefined();
+    expect(wb.sheet(3).cell("L5").value()).toBeUndefined();
+    expect(wb.sheet(3).cell("A5").value()).toBe(budget.income[0].source);
+    expect(wb.sheet(3).cell("A5").formula()).toBeUndefined();
+    expect(wb.sheet(4).cell("E5").value()).toBe(20);
+    expect(wb.sheet(5).cell("G5").value()).toContain("Allocation: 600");
+    expect(wb.sheet(5).cell("I5").value()).toBe(100);
+    expect(wb.sheet(0).cell("A20").value()).toContain("1 missing date");
+    expect(wb.sheet(0).cell("W2").value()).toBe(300);
+    const { default: JSZip } = await import("jszip");
+    const { readFileSync } = await import("node:fs");
+    const zip = await JSZip.loadAsync(readFileSync(file));
+    expect(
+      Object.keys(zip.files).filter((p) =>
+        /^xl\/charts\/chart\d+\.xml$/.test(p),
+      ),
+    ).toHaveLength(3);
+    expect(
+      await zip.file("xl/worksheets/sheet2.xml")!.async("string"),
+    ).toContain('state="frozen"');
+    expect(
+      await zip.file("xl/worksheets/sheet2.xml")!.async("string"),
+    ).toContain("autoFilter");
+    expect(await zip.file("xl/workbook.xml")!.async("string")).toContain(
+      "ExportCategories",
+    );
+    expect(await zip.file("xl/charts/chart1.xml")!.async("string")).toContain(
+      "ExportSpent",
+    );
+    expect(calls).toBe(1);
+    expect(errors).toEqual([]);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    if (status === "active")
+      await download.saveAs("/tmp/finance-v2c-review.xlsx");
+  });
+}
+test("Finance workbook empty sections, safe filename and Reports access", async ({
+  page,
+}, testInfo) => {
+  const { budget } = await fixture(page);
+  budget.summary.categories = [];
+  await page.route("**/rpc/finance_workbook_context", (r) =>
+    r.fulfill({
+      json: {
+        generated_at: "2026-09-20T12:00:00Z",
+        budget,
+        purchase_orders: [],
+        people: {},
+      },
+    }),
+  );
+  await page.goto("/#reports");
+  const waiting = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download Finance Workbook (.xlsx)" })
+    .click();
+  const download = await waiting;
+  const file = testInfo.outputPath("empty.xlsx");
+  await download.saveAs(file);
+  const { default: XlsxPopulate } = await import("xlsx-populate");
+  const w = await XlsxPopulate.fromFileAsync(file);
+  expect(w.sheets()).toHaveLength(7);
+  for (let i = 1; i < 7; i++)
+    expect(w.sheet(i).cell("A5").value()).toMatch(/^No /);
+  const filename = await page.evaluate(async () => {
+    const x = await import("/src/finance-workbook.ts");
+    return x.workbookFilename("../../bad/name:2026–27");
+  });
+  expect(filename).toBe("4418_Finance_bad_name_2026-27.xlsx");
+});
+test("Finance workbook refuses revoked export access, student has no export, no season is explained", async ({
+  page,
+}) => {
+  const { budget } = await fixture(page);
+  await page.route("**/rpc/finance_workbook_context", (r) =>
+    r.fulfill({
+      status: 403,
+      json: { message: "Budget leadership access required" },
+    }),
+  );
+  await page.goto("/#reports");
+  await page
+    .getByRole("button", { name: "Download Finance Workbook (.xlsx)" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Budget leadership");
+  budget.summary = null;
+  budget.seasons = [];
+  await page.reload();
+  await expect(
+    page.getByText("Create a season budget to start tracking team finances."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Download Finance Workbook (.xlsx)" }),
+  ).toHaveCount(0);
+  await fixture(page, false);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Download Finance Workbook (.xlsx)" }),
+  ).toHaveCount(0);
+});

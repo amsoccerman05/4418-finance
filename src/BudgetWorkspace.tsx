@@ -1,3 +1,4 @@
+import { FinanceExport } from "./FinanceExport";
 import { Analytics, RecentActivity } from "./FinanceAnalytics";
 import { BudgetRows } from "./FinanceBudgetRows";
 import { Fragment, useEffect, useState, type ReactNode, type FormEvent } from "react";
@@ -645,7 +646,7 @@ export function BudgetWorkspace({
                   {!!budget.expenses.length && <table className="finance-table"><caption className="sr-only">Manual expenses and credits</caption><thead><tr><th>Type</th><th>Payee</th><th>Category</th><th>Date</th><th>Amount</th><th>Reason</th></tr></thead><tbody>{budget.expenses.map(e=><tr key={e.id}><td data-label="Type"><span className={`finance-badge ${e.kind}`}>{e.kind==='credit'?'Credit / refund':'Manual expense'}</span></td><td data-label="Payee">{e.payee||'—'}</td><td data-label="Category">{cats.find(c=>c.id===e.category_id)?.name}</td><td data-label="Date">{e.occurred_on}</td><td data-label="Amount">{money(e.amount)}</td><td data-label="Reason">{e.reason}</td></tr>)}</tbody></table>}
                 </>
               )}
-              {page === 'reports' && <p className="export-next">Finance workbook (.xlsx) — coming in V2C</p>}
+              {page === 'reports' && <FinanceExport key={s.id} season={s} />}
               {(page === "reports" || page === "budget") && (
                 <details className="panel">
                   <summary>Budget history</summary>

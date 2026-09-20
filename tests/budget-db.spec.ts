@@ -115,6 +115,7 @@ ${Object.entries(ids)
       "utf8",
     ),
   );
+  await db.exec(readFileSync("supabase/migrations/202609200002_finance_workbook.sql", "utf8"));
   await as("admin");
   for (const [who, position_key] of [
     ["finance", "finance_lead"],
@@ -886,4 +887,181 @@ test("classification edits also reject stale state", async () => {
       reason: "Stale removal",
     }),
   ).rejects.toThrow(/changed/);
+});
+
+async function workbook(s: string) {
+  return (
+    await db.query<any>("select public.finance_workbook_context($1::uuid) c", [
+      s,
+    ])
+  ).rows[0].c;
+}
+test("workbook RPC rechecks mentor, designated leadership, revoked/archived/inactive and student access", async () => {
+  const { s } = await season(false);
+  for (const who of ["mentor", "admin", "finance"] as const) {
+    await as(who);
+    expect((await workbook(s)).budget.can_manage).toBe(true);
+  }
+  for (const who of ["student", "lead", "inactive", "readonly"] as const) {
+    await as(who);
+    await expect(workbook(s)).rejects.toThrow(/leadership/);
+  }
+  await as("mentor");
+  await db.query("select public.team_manage('assign_position',$1::jsonb)", [
+    JSON.stringify({
+      user_id: ids.lead,
+      position_key: "software_lead",
+      reason: "Budget leadership",
+    }),
+  ]);
+  await as("lead");
+  expect((await workbook(s)).budget.can_manage).toBe(true);
+  expect(
+    (
+      await db.query<any>(
+        "select finance_private.cap('finance_approver') f,finance_private.cap('po_approver') c",
+      )
+    ).rows[0],
+  ).toEqual({ f: false, c: false });
+  await db.exec(
+    "reset role;update public.team_positions set active=false where key='software_lead'",
+  );
+  await as("lead");
+  await expect(workbook(s)).rejects.toThrow(/leadership/);
+  await db.exec(
+    "reset role;update public.team_positions set active=true where key='software_lead';update public.team_member_positions set revoked_at=now(),revoked_by='00000000-0000-0000-0000-000000000012',revoke_reason='End' where position_key='software_lead'",
+  );
+  await as("lead");
+  await expect(workbook(s)).rejects.toThrow(/leadership/);
+  await db.exec(
+    `reset role;update public.profiles set active=false where id='${ids.finance}'`,
+  );
+  await as("finance");
+  await expect(workbook(s)).rejects.toThrow(/leadership/);
+  await db.exec("reset role;set role anon");
+  await expect(workbook(s)).rejects.toThrow(/permission denied/);
+});
+test("workbook RPC exports draft/active/closed empty seasons and rejects nonexistent season", async () => {
+  const { s } = await season(false);
+  for (const status of ["draft", "active", "closed"]) {
+    if (status === "active") await manage(s, "activate", { confirmed: true });
+    if (status === "closed") await manage(s, "close");
+    await as("mentor");
+    const x = await workbook(s);
+    expect(x.budget.summary.season.status).toBe(status);
+    expect(x.purchase_orders).toEqual([]);
+    expect(x.budget.income).toEqual([]);
+    expect(x.budget.summary).toEqual((await context(s)).summary);
+  }
+  await expect(workbook(uid(999))).rejects.toThrow(/existing budget season/);
+});
+test("workbook RPC is a complete read-only snapshot of authoritative totals, current PO revisions and history", async () => {
+  const { s, cat } = await season();
+  await manage(s, "income", {
+    source: "Restricted grant",
+    income_type: "Grant",
+    amount: 200,
+    status: "received",
+    received_on: "2026-09-01",
+    category_id: cat,
+  });
+  await manage(s, "income", {
+    source: "Expected",
+    income_type: "Sponsorship",
+    amount: 900,
+    status: "expected",
+  });
+  await manage(s, "income", {
+    source: "Canceled",
+    income_type: "Other",
+    amount: 999,
+    status: "canceled",
+  });
+  await manage(s, "expense", {
+    category_id: cat,
+    amount: 40,
+    payee: "Shop",
+    occurred_on: "2026-09-02",
+  });
+  await manage(s, "credit", {
+    category_id: cat,
+    amount: 10,
+    occurred_on: "2026-09-03",
+  });
+  const id = await submitted();
+  await act("po", id, "approve", { slot: "po_approver" });
+  await act("finance", id, "approve", {
+    slot: "finance_approver",
+    category_id: cat,
+  });
+  await act("submitter", id, "school_submit", { reference: "School" });
+  const requested = await submitted();
+  await act("student", requested, "edit", { ...base, amount: 225.5 });
+  await act("student", requested, "submit");
+  const canceled = await submitted();
+  await act("student", canceled, "cancel", { reason: "Not needed" });
+  const changed = await submitted();
+  await act("po", changed, "request_changes", {
+    slot: "po_approver",
+    reason: "Please revise",
+  });
+  await as("mentor");
+  const before = await context(s);
+  const x = await workbook(s);
+  const after = await context(s);
+  expect(after).toEqual(before);
+  expect(x.budget.summary).toEqual(before.summary);
+  expect(x.budget.summary).toMatchObject({
+    actual_funding: 1200,
+    expected: 900,
+    requested: 225.5,
+    committed: 0,
+    spent: 155.5,
+    credits: 10,
+    unallocated: 300,
+  });
+  expect(x.budget.summary.categories[0]).toMatchObject({
+    restricted: 200,
+    funded: 900,
+    spent: 155.5,
+    available: 744.5,
+  });
+  expect(x.purchase_orders).toHaveLength(4);
+  expect(x.purchase_orders.find((p: any) => p.id === id)).toMatchObject({
+    bucket: "spent",
+    requester: "student",
+    functional_area: "Fabrication",
+    category: "Robot parts",
+    purpose: base.purpose,
+    school_reference: "School",
+  });
+  expect(
+    x.purchase_orders.find((p: any) => p.id === id).approved_at,
+  ).toBeTruthy();
+  expect(x.purchase_orders.find((p: any) => p.id === requested)).toMatchObject({
+    bucket: "requested",
+    revision: 2,
+    amount: 225.5,
+    approved_at: null,
+  });
+  for (const pid of [canceled, changed])
+    expect(x.purchase_orders.find((p: any) => p.id === pid).bucket).toBe(
+      "none",
+    );
+  expect(
+    x.budget.history.some(
+      (h: any) => h.po_id === id && h.action === "school_submit",
+    ),
+  ).toBe(true);
+  expect(x.people[ids.mentor]).toBe("mentor");
+  // A designated leader receives the same complete season export despite narrower V1 PO visibility.
+  await db.query("select public.team_manage('assign_position',$1::jsonb)", [
+    JSON.stringify({
+      user_id: ids.other,
+      position_key: "software_lead",
+      reason: "Budget leadership",
+    }),
+  ]);
+  await as("other");
+  expect((await workbook(s)).purchase_orders).toEqual(x.purchase_orders);
 });
