@@ -168,7 +168,7 @@ for (const width of [390, 1440]) {
     ).toBeVisible();
     await page.getByText("Move funds", { exact: true }).click();
     const transfer = page
-      .locator("details")
+      .locator("details.budget-editor")
       .filter({ has: page.locator("summary", { hasText: "Move funds" }) });
     await transfer
       .getByRole("combobox", { name: "From", exact: true })
@@ -197,7 +197,7 @@ for (const width of [390, 1440]) {
     await expect(
       page.getByRole("heading", { name: "No income recorded yet" }),
     ).toBeVisible();
-    await page.getByText("Add income", { exact: true }).click();
+    await page.getByText("+ Add income", { exact: true }).click();
     await page.getByLabel("Source / sponsor").fill("Team sponsor");
     await page.getByLabel("Amount", { exact: true }).fill("500");
     await page.getByLabel("Restricted to").selectOption("parts");
@@ -212,8 +212,8 @@ for (const width of [390, 1440]) {
     await expect(
       page.getByRole("heading", { name: "No manual expenses" }),
     ).toBeVisible();
-    await page.getByText("Record refund / credit", { exact: true }).click();
-    const credit = page.locator("details[open]");
+    await page.getByText("+ Add credit", { exact: true }).click();
+    const credit = page.locator("details[open]").filter({has:page.locator("summary",{hasText:"+ Add credit"})});
     await credit.getByLabel("Amount", { exact: true }).fill("40");
     await credit.getByLabel("Date", { exact: true }).fill("2026-09-20");
     await credit.getByLabel("Reason / notes").fill("Returned unused part");
@@ -307,4 +307,30 @@ test("blank season setup is available with no existing budget", async ({
     action: "create_season",
     p: { name: "2027–28", copy_season: "", copy_allocations: false },
   });
+});
+
+for (const width of [390, 1440]) test(`draft builder and progressive income ${width}`, async ({page}) => {
+ await page.setViewportSize({width,height:844});const {budget,calls}=await fixture(page);budget.summary.season.status="draft";
+ await page.goto('/#budget');await expect(page.getByRole('heading',{name:'1. Funding',exact:true})).toBeVisible();
+ await expect(page.getByLabel('Starting / rollover funds',{exact:true})).toBeVisible();
+ await expect(page.getByLabel('Category name',{exact:true}).first()).toBeVisible();
+ const funding=page.locator('details').filter({has:page.locator('summary',{hasText:'Starting funds & reserve'})});
+ await funding.getByLabel('Starting / rollover funds',{exact:true}).fill('2500');await funding.getByRole('button',{name:'Save funding'}).click();
+ await expect.poll(()=>calls.length).toBe(1);expect(calls[0]).toMatchObject({action:'season',p:{name:'2026–27',starting_funds:'2500',reserve_target:'100',version:1}});
+ const review=page.locator('.budget-review');await expect(review.getByRole('button',{name:'Activate season'})).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>{const a=document.querySelector('.allocation-progress'),r=document.querySelector('.budget-review');return !!(a&&r&&(a.compareDocumentPosition(r)&Node.DOCUMENT_POSITION_FOLLOWING))})).toBe(true);
+ page.once('dialog',dialog=>dialog.dismiss());await review.getByRole('button',{name:'Activate season'}).click();expect(calls.length).toBe(1);
+ await page.screenshot({path:`test-results/draft-builder-${width}.png`,fullPage:true});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await nav(page,'Income');await expect(page.getByLabel('Source / sponsor')).not.toBeVisible();await page.getByText('+ Add income',{exact:true}).click();
+ await expect(page.getByLabel('Reason for change')).toHaveCount(0);
+ await expect(page.getByLabel('Expected date',{exact:true})).toBeVisible();await expect(page.getByLabel('Received date',{exact:true})).not.toBeVisible();
+ await page.getByLabel('Source / sponsor').fill('Team sponsor');await page.getByLabel('Amount',{exact:true}).fill('200');
+ await page.getByLabel('Expected date',{exact:true}).fill('2026-10-01');
+ await page.getByLabel('Income status').selectOption('received');await expect(page.getByLabel('Expected date',{exact:true})).not.toBeVisible();
+ await expect(page.getByLabel('Received date',{exact:true})).toHaveAttribute('required','');await page.getByLabel('Received date',{exact:true}).fill('2026-10-02');
+ await page.getByLabel('Income status').selectOption('canceled');await expect(page.getByLabel('Received date',{exact:true})).not.toBeVisible();
+ await page.getByLabel('Income status').selectOption('received');await expect(page.getByLabel('Received date',{exact:true})).toHaveValue('2026-10-02');
+ await page.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);
+ expect(calls[1]).toMatchObject({action:'income',p:{status:'received',expected_on:'2026-10-01',received_on:'2026-10-02'}});expect(calls[1].p).not.toHaveProperty('reason');
 });

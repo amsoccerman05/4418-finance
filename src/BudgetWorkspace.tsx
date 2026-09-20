@@ -89,6 +89,7 @@ type Field = {
   options?: { value: string; label: string }[];
   value?: unknown;
   help?: string;
+  advanced?: boolean;
 };
 const num = (name: string, label: string, value: unknown = 0): Field => ({
   name,
@@ -119,30 +120,23 @@ function Editor({
   save,
   children,
   submit = "Save",
+  initiallyOpen = false,
 }: {
   title: string;
   fields: Field[];
   save: (p: Record<string, unknown>) => void;
   children?: ReactNode;
   submit?: string;
+  initiallyOpen?: boolean;
 }) {
-  return (
-    <details className="panel budget-editor">
-      <summary>{title}</summary>
-      <form
-        className="form"
-        onSubmit={(e: FormEvent<HTMLFormElement>) => {
-          e.preventDefault();
-          const p = Object.fromEntries(new FormData(e.currentTarget));
-          save(p);
-        }}
-      >
-        {fields.map((f) => (
-          <label key={f.name}>
+  const [status, setStatus] = useState(String(fields.find(f => f.name === "status")?.value || "expected"));
+  const renderField = (f: Field) => (
+          <label key={f.name} hidden={(f.name === "expected_on" && status !== "expected") || (f.name === "received_on" && status !== "received")}>
             {f.label}
             {f.options ? (
               <select
                 name={f.name}
+                onChange={f.name === "status" ? e => setStatus(e.target.value) : undefined}
                 defaultValue={String(f.value ?? "")}
                 required={f.required}
               >
@@ -157,7 +151,7 @@ function Editor({
                 name={f.name}
                 type={f.type || "text"}
                 defaultValue={String(f.value ?? "")}
-                required={f.required}
+                required={f.required || (f.name === "received_on" && status === "received")}
                 maxLength={f.name === "reason" ? 2000 : undefined}
                 min={f.type === "number" ? 0 : undefined}
                 step={
@@ -171,33 +165,46 @@ function Editor({
             )}
             {f.help && <small>{f.help}</small>}
           </label>
-        ))}
+  );
+  return (
+    <details className="panel budget-editor" open={initiallyOpen || undefined}>
+      <summary>{title}</summary>
+      <form
+        className="form"
+        onSubmit={(e: FormEvent<HTMLFormElement>) => {
+          e.preventDefault();
+          const p = Object.fromEntries(new FormData(e.currentTarget));
+          save(p);
+        }}
+      >
+        {fields.filter(f=>!f.advanced).map(renderField)}
+        {fields.some(f=>f.advanced) && <details className="budget-help"><summary>More options</summary>{fields.filter(f=>f.advanced).map(renderField)}</details>}
         {children}
         <button className="primary">{submit}</button>
       </form>
     </details>
   );
 }
-function Totals({ b }: { b: NonNullable<Budget["summary"]> }) {
+function Totals({ b, brief = false }: { b: NonNullable<Budget["summary"]>; brief?: boolean }) {
   return (
     <>
       <dl className="budget-totals">
         {[
+          ...(b.season.status === "active" ? [["Requested", b.requested], ["Committed", b.committed], ["Spent · net of credits", b.spent], ["Available funding", b.available]] : []),
           ["Starting funds", b.starting_funds],
+          ["Reserve target", b.season.reserve_target],
           ["Received income", b.received],
           ["Restricted received funds", b.restricted],
           ["Expected income · planning only", b.expected],
           ["Allocated", b.allocated],
           ["Unallocated · unrestricted", b.unallocated],
-          ["Requested", b.requested],
-          ["Committed", b.committed],
-          ["Spent · net of credits", b.spent],
-          ["Available funding", b.available],
+          ...(b.season.status === "closed" ? [["Requested", b.requested], ["Committed", b.committed], ["Spent · net of credits", b.spent], ["Available funding", b.available]] : []),
         ]
+          .filter(([name]) => !brief || ["Received income", "Expected income · planning only", "Unallocated · unrestricted", "Available funding", "Reserve target"].includes(String(name)))
           .filter(
             ([name, value]) =>
               value !== 0 ||
-              ["Available funding", "Unallocated · unrestricted"].includes(
+              ["Requested", "Committed", "Spent · net of credits", "Starting funds", "Reserve target", "Received income", "Expected income · planning only", "Allocated", "Available funding", "Unallocated · unrestricted"].includes(
                 name as string,
               ),
           )
@@ -208,12 +215,7 @@ function Totals({ b }: { b: NonNullable<Budget["summary"]> }) {
             </div>
           ))}
       </dl>
-      <p className="muted">
-        Available funding is received resources minus requested purchases,
-        commitments and net spending. Expected income is not available cash.
-        Available funding includes category-restricted funds; Unallocated is
-        unrestricted.
-      </p>
+      <details className="budget-help"><summary>What do these amounts mean?</summary><p>Expected income is a plan, not cash. Available funding is what remains after requests, commitments and net spending. Unallocated funds can be assigned to any category; restricted income stays with its category. Reserve is the amount you aim to keep aside.</p></details>
       {(b.available < b.season.reserve_target ||
         b.unallocated < b.season.reserve_target) && (
         <p className="budget-warning">
@@ -283,17 +285,17 @@ export function BudgetWorkspace({
     }, "Finance updated");
   const categoryFields = (c?: Category): Field[] => [
     input("name", "Category name", c?.name, true),
-    input("description", "Description", c?.description),
-    num("display_order", "Display order", c?.display_order || 0),
+    {...input("description", "Description", c?.description),advanced:true},
+    {...num("display_order", "Display order", c?.display_order || 0),advanced:true},
     num("allocation", "Unrestricted allocation", c?.allocation || 0),
-    input(
+    { ...input(
       "forecast",
       "Forecast (optional)",
       c?.forecast ?? "",
       false,
       "number",
-    ),
-    pick(
+    ),advanced:true},
+    {...pick(
       "active",
       "Category state",
       options(["true", "false"]).map((o) => ({
@@ -301,8 +303,8 @@ export function BudgetWorkspace({
         label: o.value === "true" ? "Active" : "Archived",
       })),
       String(c?.active ?? true),
-    ),
-    why,
+    ),advanced:true},
+    {...why,advanced:s?.status !== "active"},
   ];
   const incomeFields = (i?: Budget["income"][number]): Field[] => [
     input("source", "Source / sponsor", i?.source, true),
@@ -325,15 +327,15 @@ export function BudgetWorkspace({
     input("expected_on", "Expected date", i?.expected_on || "", false, "date"),
     input(
       "received_on",
-      "Received date (required when received)",
+      "Received date",
       i?.received_on || "",
       false,
       "date",
     ),
-    pick("category_id", "Restricted to", catOptions, i?.category_id || ""),
+    { ...pick("category_id", "Restricted to", [{value:"", label:"No restriction — any category"}, ...catOptions.slice(1)], i?.category_id || ""), help: "Choose a category only if the sponsor requires the money to be used there." },
     input("reference", "Reference", i?.reference),
     input("notes", "Notes", i?.notes),
-    why,
+    ...(i || s?.status === "active" ? [why] : []),
   ];
   return (
     <section className="budget-workspace" key={`${s?.id}-${s?.version}`}>
@@ -341,7 +343,7 @@ export function BudgetWorkspace({
       {error && <p role="alert">{error}</p>}
       {page === "dashboard" && (
         <section className="panel">
-          <h2>Your next actions</h2>
+          <h2>Needs your attention</h2>
           {data.orders
             .filter(
               (p) =>
@@ -356,7 +358,7 @@ export function BudgetWorkspace({
                 className="secondary"
                 onClick={() => openPO(p.id)}
               >
-                PO {p.po_number} · {p.vendor}
+                PO {p.po_number} · {p.vendor} · {p.status === "approved" ? "Submit to school" : "Review purchase"}
               </button>
             ))}
           {!data.orders.some(
@@ -399,7 +401,7 @@ export function BudgetWorkspace({
               <a href="#budget">Set up a season</a>
             </div>
           )}
-          {(page === "budget" || page === "settings") && (
+          {((page === "budget" && !s) || page === "settings") && (
             <Editor
               title="Create season"
               fields={[
@@ -446,8 +448,9 @@ export function BudgetWorkspace({
                 <strong>{s.name}</strong> · {label(s.status)}
                 {s.status === "closed" && " · Historical records are read-only"}
               </p>
-              {["dashboard", "budget", "reports"].includes(page) && b && (
-                <Totals b={b} />
+              {page === "dashboard" && <p className="workspace-links"><a href="#budget">{s.status === "draft" ? "Continue budget setup" : "View category balances"}</a><a href="#income">Track income</a><a href="#expenses">Other spending & credits</a></p>}
+              {["dashboard", "reports"].includes(page) && b && (
+                <Totals b={b} brief={page === "dashboard"} />
               )}
               {page === "dashboard" && (
                 <section className="panel">
@@ -465,36 +468,24 @@ export function BudgetWorkspace({
               )}
               {page === "budget" && (
                 <>
-                  {s.status === "draft" && (
-                    <section className="panel">
-                      <h2>Ready to activate?</h2>
-                      <p>
-                        Review starting funds, received and expected income,
-                        allocations, unallocated funds and reserve above.
-                        Activation makes this the operational season; another
-                        active season must first be closed.
-                      </p>
-                      <button
-                        className="primary"
-                        onClick={() => {
-                          if (
-                            confirm(
-                              `Activate ${s.name} after reviewing its funding and allocations?`,
-                            )
-                          )
-                            save("activate", { confirmed: true });
-                        }}
-                      >
-                        Activate season
-                      </button>
+                  {s.status === "draft" ? <>
+                    <h2>Build your annual budget</h2>
+                    <p>Set your funding, plan each category, then review together before activating.</p>
+                    <ol className="builder-steps"><li>Funding</li><li>Categories & allocations</li><li>Review</li><li>Activate</li></ol>
+                    <section className="panel"><h2>1. Funding</h2>
+                      <Editor title="Starting funds & reserve" initiallyOpen fields={[
+                        num("starting_funds", "Starting / rollover funds", s.starting_funds),
+                        num("reserve_target", "Reserve target", s.reserve_target),
+                      ]} submit="Save funding" save={p => save("season", {name:s.name,starts_on:s.starts_on,ends_on:s.ends_on,...p})}>
+                        <p>Starting funds are money already on hand. Reserve is what you aim to keep aside.</p>
+                      </Editor>
+                      <p><a href="#income">Add expected or received income</a> for sponsorships, grants and fundraising.</p>
                     </section>
-                  )}
+                    <h2>2. Categories & allocations</h2>
+                  </> : <><h2>Category balances</h2><p>See what is planned, reserved and spent across your team.</p></>}
+                  {b && <><Totals b={b}/><p className="allocation-progress"><strong>{money(b.allocated)} allocated</strong> · {money(b.unallocated)} unallocated{s.status === "draft" && " — ready to assign or keep aside"}</p></>}
                   <h2>Categories</h2>
-                  <p className="muted">
-                    Your unrestricted allocation plus restricted received funds
-                    equals the category’s funded allocation. Functional team
-                    areas remain separate.
-                  </p>
+                  <details className="budget-help"><summary>Allocation and restricted funding</summary><p>Your allocation uses general team funds. Received restricted income adds funding only to its assigned category. Team areas describe responsibility, not budget categories.</p></details>
                   {!cats.length && (
                     <p>
                       No categories yet. Build the plan that fits your team.
@@ -511,10 +502,7 @@ export function BudgetWorkspace({
                         {[
                           ["Funded allocation", c.funded],
                           ["Restricted received", c.restricted],
-                          ["Requested", c.requested],
-                          ["Committed", c.committed],
-                          ["Spent", c.spent],
-                          ["Category available", c.available],
+                          ...(s.status === "draft" ? [] : [["Requested", c.requested], ["Committed", c.committed], ["Spent", c.spent], ["Category available", c.available]]),
                           ...(c.forecast === null
                             ? []
                             : [["Forecast", c.forecast]]),
@@ -528,6 +516,7 @@ export function BudgetWorkspace({
                       {editable && (
                         <Editor
                           title={`Edit ${c.name}`}
+                          initiallyOpen={s.status === "draft"}
                           fields={categoryFields(c)}
                           save={(p) =>
                             save("category", {
@@ -544,6 +533,7 @@ export function BudgetWorkspace({
                     <>
                       <Editor
                         title="Add category"
+                        initiallyOpen={s.status === "draft" && cats.length === 0}
                         fields={categoryFields()}
                         save={(p) =>
                           save("category", {
@@ -552,6 +542,7 @@ export function BudgetWorkspace({
                           })
                         }
                       />
+                      <details className="panel budget-tools" open={s.status === "active" || undefined}><summary>{s.status === "draft" ? "Advanced budget tools" : "Move funds & other actions"}</summary>
                       <Editor
                         title="Move funds"
                         fields={[
@@ -608,9 +599,10 @@ export function BudgetWorkspace({
                           between seasons.
                         </p>
                       </Editor>
+                      </details>
                     </>
                   )}
-                  <h2>PO budget tracking</h2>
+                  <details className="panel"><summary>PO budget tracking</summary>
                   {budget.po_links.length === 0 ? (
                     <p>No POs assigned to this season yet.</p>
                   ) : (
@@ -622,15 +614,20 @@ export function BudgetWorkspace({
                         · {label(p.bucket)} · {money(p.amount)}
                       </p>
                     ))
-                  )}
+                  )}</details>
+                  {s.status === "draft" && b && <section className="panel budget-review"><h2>3. Review your plan</h2>
+                    <p>Check these amounts with your team. Expected income is not available to spend yet.</p>
+                    <Totals b={b}/>
+                    <p>{cats.filter(c=>c.active).length} active categories · {money(b.unallocated)} remains unallocated.</p>
+                    {!cats.length && <p className="budget-warning">You have not added any categories yet.</p>}
+                    <h2>4. Activate when ready</h2><p>Activation starts live budget tracking and requires budget categories during Finance approval.</p>
+                    <button className="primary" onClick={()=>{if(confirm(`Activate ${s.name} after reviewing its funding and allocations?`))save("activate",{confirmed:true});}}>Activate season</button>
+                  </section>}
                 </>
               )}
               {page === "income" && (
                 <>
-                  <p>
-                    Expected income supports planning. Only received income adds
-                    available funding.
-                  </p>
+                  <dl className="budget-totals"><div><dt>Received income</dt><dd>{money(b?.received || 0)}</dd></div><div><dt>Expected · not yet received</dt><dd>{money(b?.expected || 0)}</dd></div></dl>
                   {!budget.income.length && (
                     <div className="panel">
                       <h2>No income recorded yet</h2>
@@ -642,7 +639,7 @@ export function BudgetWorkspace({
                   )}
                   {editable && (
                     <Editor
-                      title="Add income"
+                      title="+ Add income"
                       fields={incomeFields()}
                       save={(p) => save("income", p)}
                     />
@@ -658,7 +655,8 @@ export function BudgetWorkspace({
                           ? `Restricted to ${cats.find((c) => c.id === i.category_id)?.name}`
                           : "Unrestricted"}
                       </p>
-                      <p>{i.notes}</p>
+                      <p>{i.status === "received" ? i.received_on : i.status === "expected" ? i.expected_on || "No expected date" : "Canceled"}</p>
+                      {i.notes && <p>{i.notes}</p>}
                       {editable && (
                         <Editor
                           title={`Edit ${i.source}`}
@@ -676,7 +674,9 @@ export function BudgetWorkspace({
                     Purchases made through POs are tracked automatically. Enter
                     only other spending here.
                   </p>
+                  <dl className="budget-totals"><div><dt>Total spent · POs and other expenses, after credits</dt><dd>{money(b?.spent || 0)}</dd></div><div><dt>Credits recorded</dt><dd>{money(b?.credits || 0)}</dd></div></dl>
                   {!budget.expenses.length && <h2>No manual expenses</h2>}
+                  {s.status === "draft" && <p>Activate the budget before recording expenses or credits.</p>}
                   {editable &&
                     s.status === "active" &&
                     (["expense", "credit"] as const).map((kind) => (
@@ -684,8 +684,8 @@ export function BudgetWorkspace({
                         key={kind}
                         title={
                           kind === "expense"
-                            ? "Record manual expense"
-                            : "Record refund / credit"
+                            ? "+ Add expense"
+                            : "+ Add credit"
                         }
                         fields={[
                           pick(
