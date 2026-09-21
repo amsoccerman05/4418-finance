@@ -202,3 +202,5 @@
 .budget-workspace details.panel{padding:12px 16px;margin:12px 0}.budget-workspace details.panel[open]{padding:16px}.budget-workspace details.panel>summary{min-height:40px;align-content:center;cursor:pointer}.category-track:focus-visible{outline:3px solid #075980;outline-offset:5px}
 
 .finance-export{display:flex;flex-wrap:wrap;align-items:center;gap:1rem}.finance-export>div{flex:1 1 20rem}.finance-export button{display:flex;align-items:center;justify-content:center;gap:.5rem;min-height:44px;white-space:normal}.finance-export p{max-width:65ch}.finance-export [role="alert"]{width:100%}@media(max-width:600px){.finance-export button{width:100%}}
+
+.creation-action{margin:12px 0}.creation-action>form{padding:20px;border:1px solid var(--suite-border);border-radius:var(--radius-card);background:var(--suite-surface)}.funding-warning{border-left:4px solid var(--suite-warning);background:var(--suite-warning-bg)}.funding-warning p{max-width:65ch}.funding-warning a{display:inline-flex;align-items:center;min-height:44px}

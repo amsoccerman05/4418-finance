@@ -213,7 +213,7 @@ for (const width of [390, 1440]) {
       page.getByRole("heading", { name: "No manual expenses" }),
     ).toBeVisible();
     await page.getByText("+ Add credit", { exact: true }).click();
-    const credit = page.locator("details[open]").filter({has:page.locator("summary",{hasText:"+ Add credit"})});
+    const credit = page.locator(".creation-action").filter({has:page.getByLabel("Related PO (optional)")});
     await credit.getByLabel("Amount", { exact: true }).fill("40");
     await credit.getByLabel("Date", { exact: true }).fill("2026-09-20");
     await credit.getByLabel("Reason / notes").fill("Returned unused part");
@@ -361,7 +361,7 @@ for(const width of [390, 900, 1440])test(`V2B populated charts and record tables
  await page.getByRole('button',{name:'Edit Team sponsor',exact:true}).click();await expect(page.getByLabel('Received date',{exact:true}).last()).toBeVisible();
  const editor=page.locator('.editor-row');await editor.getByLabel('Amount',{exact:true}).fill('600');await editor.getByLabel('Reason for change').fill('Correct sponsor amount');await editor.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(1);expect(calls[0]).toMatchObject({action:'income',p:{id:'sponsor',amount:'600',status:'received',reason:'Correct sponsor amount'}});
  await nav(page,'Expenses');await expect(page.getByRole('table',{name:'Manual expenses and credits'})).toContainText('Returned spare');await page.getByText('+ Add expense',{exact:true}).click();
- const form=page.locator('details.budget-editor').filter({has:page.locator('summary',{hasText:'+ Add expense'})});await form.getByLabel('Amount',{exact:true}).fill('25');await form.getByLabel('Vendor / payee').fill('Shop');await form.getByLabel('Date',{exact:true}).fill('2026-09-20');await form.getByLabel('Reason / notes').fill('Consumables');await form.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);expect(calls[1].action).toBe('expense');
+ const form=page.locator('.creation-action').filter({has:page.getByLabel('Vendor / payee')});await form.getByLabel('Amount',{exact:true}).fill('25');await form.getByLabel('Vendor / payee').fill('Shop');await form.getByLabel('Date',{exact:true}).fill('2026-09-20');await form.getByLabel('Reason / notes').fill('Consumables');await form.getByRole('button',{name:'Save',exact:true}).click();await expect.poll(()=>calls.length).toBe(2);expect(calls[1].action).toBe('expense');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await nav(page,'Reports');await expect(page.getByRole('region',{name:'Category budget chart'})).toBeVisible();await page.getByLabel('Chart category').selectOption('parts');await expect(page.getByRole('region',{name:'Category budget chart'})).not.toContainText('Travel');
  await nav(page,'Dashboard');await expect(page.getByRole('region',{name:'Category budget chart'})).toHaveCount(1);await expect(page.getByRole('region',{name:'Season financial summary'})).toHaveCount(1);await expect(page.getByLabel('Chart category')).toHaveCount(0);
@@ -645,4 +645,10 @@ test("Finance workbook refuses revoked export access, student has no export, no 
   await expect(
     page.getByRole("button", { name: "Download Finance Workbook (.xlsx)" }),
   ).toHaveCount(0);
+});
+
+test('unfunded allocations point to setup and income creation uses a button',async({page})=>{
+ await page.setViewportSize({width:390,height:844});const {budget}=await fixture(page);budget.summary.actual_funding=0;budget.summary.starting_funds=0;budget.summary.received=0;budget.summary.unallocated=-1200;budget.summary.season.status='draft';
+ await page.goto('/');await expect(page.getByRole('heading',{name:'Allocated without funding'})).toBeVisible();await expect(page.getByRole('link',{name:'Set starting funds'})).toHaveAttribute('href','#budget');await page.getByRole('link',{name:'Record received income'}).click();
+ await page.getByRole('button',{name:'+ Add income',exact:true}).click();await expect(page.getByLabel('Source / sponsor')).toBeVisible();await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByLabel('Source / sponsor')).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

@@ -132,6 +132,9 @@ function Editor({
   submit?: string;
   initiallyOpen?: boolean;
 }) {
+  const creation = title.startsWith("+ Add ");
+  const [expanded, setExpanded] = useState(false);
+  const Container = creation ? "section" : "details";
   const [status, setStatus] = useState(String(fields.find(f => f.name === "status")?.value || "expected"));
   const renderField = (f: Field) => (
           <label key={f.name} hidden={(f.name === "expected_on" && status !== "expected") || (f.name === "received_on" && status !== "received")}>
@@ -170,9 +173,9 @@ function Editor({
           </label>
   );
   return (
-    <details className="panel budget-editor" open={initiallyOpen || undefined}>
-      <summary>{title}</summary>
-      <form
+    <Container className={`budget-editor ${creation ? "creation-action" : "panel"}`} {...(!creation ? {open: initiallyOpen || undefined} : {})}>
+      {creation ? <button type="button" className="secondary" aria-expanded={expanded} onClick={()=>{if(!expanded)setStatus(String(fields.find(f=>f.name==="status")?.value || "expected"));setExpanded(!expanded);}}>{expanded ? "Cancel" : title}</button> : <summary>{title}</summary>}
+      {(!creation || expanded) && <form
         className="form"
         onSubmit={(e: FormEvent<HTMLFormElement>) => {
           e.preventDefault();
@@ -184,8 +187,8 @@ function Editor({
         {fields.some(f=>f.advanced) && <details className="budget-help"><summary>More options</summary>{fields.filter(f=>f.advanced).map(renderField)}</details>}
         {children}
         <button className="primary">{submit}</button>
-      </form>
-    </details>
+      </form>}
+    </Container>
   );
 }
 function Totals({ b, brief = false }: { b: NonNullable<Budget["summary"]>; brief?: boolean }) {
@@ -359,6 +362,7 @@ export function BudgetWorkspace({
         )}
       {budget?.can_manage && (
         <>
+          {budget.summary && budget.summary.allocated > 0 && budget.summary.actual_funding === 0 && <aside className="panel funding-warning"><h2>Allocated without funding</h2><p>Your categories have allocations, but no starting funds or received income have been recorded. Expected income is still a plan.</p><a href={s?.status === "draft" ? "#budget" : "#settings"}>Set starting funds</a>{" · "}<a href="#income">Record received income</a></aside>}
           <label className="season-picker">
             Budget season
             <select
