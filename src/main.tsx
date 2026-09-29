@@ -845,6 +845,10 @@ function Detail({
                   )}
                 </>
               )}
+              {p.status === "awaiting_approval" && p.requester_id === d.context.profile.id &&
+                d.context.capabilities.includes(slot) && !canOverride && !approved(d,p,slot) && (
+                <p>You requested this PO, so you cannot approve it yourself. Ask a mentor to review it using the existing override process. Two different approvers are still required.</p>
+              )}
               {canAct && (
                 <form
                   className="form"

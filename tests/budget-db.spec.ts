@@ -1084,3 +1084,13 @@ for (const role of ['student','lead']) test(`assigned ${role} Finance Lead can l
  expect((await db.query<any>('select public.finance_context() c')).rows[0].c.capabilities).not.toContain('finance_approver');
  await expect(call('approve',{id,version:2,slot:'finance_approver'})).rejects.toThrow();
 });
+
+test('Finance Lead own request remains excluded; reasoned mentor override stays available',async()=>{
+ await db.exec(`reset role;update profiles set role='lead' where id='${ids.finance}'`);
+ await as('finance');const id=await call('create',base);await act('finance',id,'submit');
+ await expect(act('finance',id,'approve',{slot:'finance_approver'})).rejects.toThrow(/Configured approver/);
+ await expect(act('mentor',id,'approve',{slot:'finance_approver'})).rejects.toThrow(/Configured approver/);
+ await act('mentor',id,'approve',{slot:'finance_approver',override_reason:'Independent review of Finance Lead request'});
+ expect((await row(id)).status).toBe('awaiting_approval');
+ await expect(act('mentor',id,'approve',{slot:'po_approver',override_reason:'Review'})).rejects.toThrow(/distinct/);
+});
