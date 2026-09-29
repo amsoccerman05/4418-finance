@@ -124,6 +124,7 @@ function Editor({
   children,
   submit = "Save",
   initiallyOpen = false,
+  alwaysOpen = false,
 }: {
   title: string;
   fields: Field[];
@@ -131,10 +132,11 @@ function Editor({
   children?: ReactNode;
   submit?: string;
   initiallyOpen?: boolean;
+  alwaysOpen?: boolean;
 }) {
   const creation = title.startsWith("+ Add ");
   const [expanded, setExpanded] = useState(false);
-  const Container = creation ? "section" : "details";
+  const Container = creation || alwaysOpen ? "section" : "details";
   const [status, setStatus] = useState(String(fields.find(f => f.name === "status")?.value || "expected"));
   const renderField = (f: Field) => (
           <label key={f.name} hidden={(f.name === "expected_on" && status !== "expected") || (f.name === "received_on" && status !== "received")}>
@@ -173,8 +175,8 @@ function Editor({
           </label>
   );
   return (
-    <Container className={`budget-editor ${creation ? "creation-action" : "panel"}`} {...(!creation ? {open: initiallyOpen || undefined} : {})}>
-      {creation ? <button type="button" className="secondary" aria-expanded={expanded} onClick={()=>{if(!expanded)setStatus(String(fields.find(f=>f.name==="status")?.value || "expected"));setExpanded(!expanded);}}>{expanded ? "Cancel" : title}</button> : <summary>{title}</summary>}
+    <Container className={`budget-editor ${creation ? "creation-action" : "panel"}`} {...(!creation && !alwaysOpen ? {open: initiallyOpen || undefined} : {})}>
+      {creation ? <button type="button" className="secondary" aria-expanded={expanded} onClick={()=>{if(!expanded)setStatus(String(fields.find(f=>f.name==="status")?.value || "expected"));setExpanded(!expanded);}}>{expanded ? "Cancel" : title}</button> : alwaysOpen ? <h3>{title}</h3> : <summary>{title}</summary>}
       {(!creation || expanded) && <form
         className="form"
         onSubmit={(e: FormEvent<HTMLFormElement>) => {
@@ -197,6 +199,7 @@ function Totals({ b, brief = false }: { b: NonNullable<Budget["summary"]>; brief
       <dl className="budget-totals">
         {[
           ...(b.season.status === "active" ? [["Requested", b.requested], ["Committed", b.committed], ["Spent · net of credits", b.spent], ["Available funding", b.available]] : []),
+          ...(b.season.status === "draft" ? [["Actual funding", b.actual_funding]] : []),
           ["Starting funds", b.starting_funds],
           ["Reserve target", b.season.reserve_target],
           ["Received income", b.received],
@@ -210,7 +213,7 @@ function Totals({ b, brief = false }: { b: NonNullable<Budget["summary"]>; brief
           .filter(
             ([name, value]) =>
               value !== 0 ||
-              ["Requested", "Committed", "Spent · net of credits", "Starting funds", "Reserve target", "Received income", "Expected income · planning only", "Allocated", "Available funding", "Unallocated · unrestricted"].includes(
+              ["Actual funding", "Requested", "Committed", "Spent · net of credits", "Starting funds", "Reserve target", "Received income", "Expected income · planning only", "Allocated", "Available funding", "Unallocated · unrestricted"].includes(
                 name as string,
               ),
           )
@@ -442,17 +445,20 @@ export function BudgetWorkspace({
                   {s.status === "draft" ? <>
                     <h2>Build your annual budget</h2>
                     <p>Set your funding, plan each category, then review together before activating.</p>
-                    <ol className="builder-steps"><li>Funding</li><li>Categories & allocations</li><li>Review</li><li>Activate</li></ol>
+                    <ol className="builder-steps"><li>Funding</li><li>Plan spending</li><li>Review & activate</li></ol>
                     <section className="panel"><h2>1. Funding</h2>
-                      <Editor title="Starting funds & reserve" initiallyOpen fields={[
+                      <Editor title="Set starting funds" alwaysOpen fields={[
+                        input("name", "Season name", s.name, true),
                         num("starting_funds", "Starting / rollover funds", s.starting_funds),
                         num("reserve_target", "Reserve target", s.reserve_target),
                       ]} submit="Save funding" save={p => save("season", {name:s.name,starts_on:s.starts_on,ends_on:s.ends_on,...p})}>
                         <p>Starting funds are money already on hand. Reserve is what you aim to keep aside.</p>
                       </Editor>
-                      <p><a href="#income">Add expected or received income</a> for sponsorships, grants and fundraising.</p>
+                      <p>Received income: <strong>{money(b?.received || 0)}</strong> · Expected income: <strong>{money(b?.expected || 0)}</strong></p>
+                      <p>Expected income helps planning but is not available cash until received.</p>
+                      <a className="secondary" href="#income">Add income</a>
                     </section>
-                    <h2>2. Categories & allocations</h2>
+                    <h2>2. Plan spending</h2>
                   </> : <><h2>Category balances</h2><p>See what is planned, reserved and spent across your team.</p></>}
                   {b && <>{s.status === "draft" && <Totals b={b}/>}<p className="allocation-progress"><strong>{money(b.allocated)} allocated</strong> · {money(b.unallocated)} unallocated{s.status === "draft" && " — ready to assign or keep aside"}</p></>}
                   <h2>Categories</h2>
@@ -550,13 +556,13 @@ export function BudgetWorkspace({
                       </p>
                     ))
                   )}</details>
-                  {s.status === "draft" && b && <section className="panel budget-review"><h2>3. Review your plan</h2>
+                  {s.status === "draft" && b && <section className="panel budget-review"><h2>3. Review & activate</h2>
                     <p>Check these amounts with your team. Expected income is not available to spend yet.</p>
                     <Totals b={b}/>
                     <p>{cats.filter(c=>c.active).length} active categories · {money(b.unallocated)} remains unallocated.</p>
                     {!cats.length && <p className="budget-warning">You have not added any categories yet.</p>}
-                    <h2>4. Activate when ready</h2><p>Activation starts live budget tracking and requires budget categories during Finance approval.</p>
-                    <button className="primary" onClick={()=>{if(confirm(`Activate ${s.name} after reviewing its funding and allocations?`))save("activate",{confirmed:true});}}>Activate season</button>
+                    <p>Activation starts live budget tracking and requires budget categories during Finance approval.</p>
+                    <button className="primary" onClick={()=>{if(confirm(`Activate ${s.name} after reviewing its funding and allocations?`))save("activate",{confirmed:true});}}>Activate budget</button>
                   </section>}
                 </>
               )}

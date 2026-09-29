@@ -317,12 +317,14 @@ for (const width of [390, 1440]) test(`draft builder and progressive income ${wi
  await page.goto('/#budget');await expect(page.getByRole('heading',{name:'1. Funding',exact:true})).toBeVisible();
  await expect(page.getByLabel('Starting / rollover funds',{exact:true})).toBeVisible();
  await expect(page.getByLabel('Robot Parts category name',{exact:true})).toBeVisible();
- const funding=page.locator('details').filter({has:page.locator('summary',{hasText:'Starting funds & reserve'})});
+ const funding=page.locator('section.budget-editor').filter({has:page.getByRole('heading',{name:'Set starting funds'})});
+ await expect(funding.getByLabel('Season name')).toBeVisible();
+ await expect(page.locator('.builder-steps li')).toHaveText(['Funding','Plan spending','Review & activate']);
  await funding.getByLabel('Starting / rollover funds',{exact:true}).fill('2500');await funding.getByRole('button',{name:'Save funding'}).click();
  await expect.poll(()=>calls.length).toBe(1);expect(calls[0]).toMatchObject({action:'season',p:{name:'2026–27',starting_funds:'2500',reserve_target:'100',version:1}});
- const review=page.locator('.budget-review');await expect(review.getByRole('button',{name:'Activate season'})).toBeVisible();
+ const review=page.locator('.budget-review');await expect(review.getByRole('button',{name:'Activate budget'})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>{const a=document.querySelector('.allocation-progress'),r=document.querySelector('.budget-review');return !!(a&&r&&(a.compareDocumentPosition(r)&Node.DOCUMENT_POSITION_FOLLOWING))})).toBe(true);
- page.once('dialog',dialog=>dialog.dismiss());await review.getByRole('button',{name:'Activate season'}).click();expect(calls.length).toBe(1);
+ page.once('dialog',dialog=>dialog.dismiss());await review.getByRole('button',{name:'Activate budget'}).click();expect(calls.length).toBe(1);
  await page.screenshot({path:`test-results/draft-builder-${width}.png`,fullPage:true});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await nav(page,'Income');await expect(page.getByLabel('Source / sponsor')).not.toBeVisible();await page.getByText('+ Add income',{exact:true}).click();

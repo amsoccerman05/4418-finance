@@ -1065,3 +1065,22 @@ test("workbook RPC is a complete read-only snapshot of authoritative totals, cur
   await as("other");
   expect((await workbook(s)).purchase_orders).toEqual(x.purchase_orders);
 });
+
+for (const role of ['student','lead']) test(`assigned ${role} Finance Lead can load approval data and approve independently of mentor`,async()=>{
+ await db.exec(`reset role;update public.profiles set role='${role}' where id='${ids.finance}'`);
+ const id=await submitted();
+ await as('finance');
+ const ctx=(await db.query<any>('select public.finance_context() c')).rows[0].c;
+ expect(ctx.capabilities).toContain('finance_approver');
+ expect(ctx.capabilities).not.toContain('po_approver');
+ expect(await row(id)).toBeTruthy();
+ for(const table of ['finance_po_approvals','finance_po_revisions','finance_po_history','finance_assignments'])
+  await db.query(`select * from public.${table}`);
+ await act('finance',id,'approve',{slot:'finance_approver'});
+ expect((await row(id)).status).toBe('awaiting_approval');
+ await expect(act('finance',id,'approve',{slot:'po_approver'})).rejects.toThrow();
+ await db.exec("reset role;update public.team_member_positions set revoked_at=now(),revoked_by='00000000-0000-0000-0000-000000000012',revoke_reason='Test removal' where position_key='finance_lead'");
+ await as('finance');
+ expect((await db.query<any>('select public.finance_context() c')).rows[0].c.capabilities).not.toContain('finance_approver');
+ await expect(call('approve',{id,version:2,slot:'finance_approver'})).rejects.toThrow();
+});
