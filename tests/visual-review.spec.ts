@@ -34,7 +34,7 @@ for (const width of [390, 700, 768, 1440]) {
     await expect(page.getByRole('button',{name:'Download Finance Workbook (.xlsx)'})).toBeVisible();
     await capture('reports');
     await financeNav(page,'Income');
-    await expect(page.getByText('Community sponsor',{exact:true})).toBeVisible();
+    await expect(page.getByRole('table',{name:'Income records'}).locator('strong').filter({hasText:/^Community sponsor$/})).toBeVisible();
     await capture('income');
     await page.getByRole('button',{name:'+ Add income',exact:true}).click();
     await expect(page.getByLabel('Source / sponsor')).toBeVisible();

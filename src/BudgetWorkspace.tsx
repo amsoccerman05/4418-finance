@@ -14,6 +14,8 @@ import {
   Menu,
   ArrowUpRight,
   ShieldCheck,
+  Home,
+  Plus,
 } from "lucide-react";
 import { money, label, when, needsMe, type Data, type PO } from "./service";
 import {
@@ -83,6 +85,7 @@ export function FinanceNav({
               {name}
             </a>
           ))}
+      <a className="finance-home" href="https://team.frc4418.org/"><Home size={18} aria-hidden="true" />Team Hub / Home</a>
       </nav>
       <div className="finance-nav-note"><ShieldCheck size={18} aria-hidden="true" /><span>Team finance<small>Plan. Review. Track.</small></span></div>
     </aside>
@@ -251,12 +254,14 @@ export function BudgetWorkspace({
   data,
   run,
   openPO,
+  newPO,
   assignments,
 }: {
   page: Workspace;
   data: Data;
   run: Run;
   openPO: (id: string) => void;
+  newPO: () => void;
   assignments: ReactNode;
 }) {
   const [budget, setBudget] = useState<Budget | null>(null),
@@ -795,6 +800,7 @@ export function BudgetWorkspace({
           <FileText className="empty-icon" size={28} aria-hidden="true" />
           <h2>Your purchase orders</h2>
           <p>Your purchase orders and their approval history are available in Purchase Orders.</p>
+          <div className="finance-empty-actions">{data.context.can_create && <button className="primary" onClick={newPO}><Plus size={18} aria-hidden="true" />New purchase order</button>}<a className="secondary" href="#orders">View purchase orders</a></div>
         </div>
       )}
     </section>

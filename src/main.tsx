@@ -1,3 +1,4 @@
+import { FinanceFeedback } from "./FinanceFeedback";
 import { FinancePageHeader } from "./FinancePageHeader";
 import { Plus, FileText, ChevronRight, ClipboardCheck, Clock3, Send, CheckCheck } from "lucide-react";
 import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspaces } from './BudgetWorkspace';
@@ -59,6 +60,7 @@ function App() {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
+    [pendingMessage, setPendingMessage] = useState("Saving changes…"),
     [selected, setSelected] = useState<string | null>(null),
     [editing, setEditing] = useState<PO | "new" | null>(null),
     [admin, setAdmin] = useState(false),
@@ -135,6 +137,7 @@ function App() {
   }, []);
   async function run(work: () => Promise<unknown>, text = "Saved") {
     setBusy(true);
+    setPendingMessage(text === "Refreshed" ? "Refreshing Finance…" : text === "Signed out" ? "Signing out…" : "Saving changes…");
     setError("");
     setMessage("");
     const gen = generation.current;
@@ -163,7 +166,7 @@ function App() {
       <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
       <main id="main">
         {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
-          {data?.context.can_create && <button className="primary" onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
+          {data?.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
         </FinancePageHeader>}
         {!client ? (
           <div className="panel">
@@ -172,12 +175,7 @@ function App() {
           </div>
         ) : (
           <>
-            {error && (
-              <p role="alert" className="alert">
-                {error}
-              </p>
-            )}
-            {message && <p role="status">{message}</p>}
+            {!(data && (po || editing || admin)) && <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />}
             {loading ? (
               <p role="status">Loading Finance…</p>
             ) : !signed ? (
@@ -270,7 +268,7 @@ function App() {
             ) : data ? (
               <>
                 <div className="toolbar"><button className="secondary" disabled={busy} onClick={()=>void run(async()=>{},'Refreshed')}>Refresh</button></div>
-                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
+                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} newPO={()=>setEditing("new")} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
               </>
             ) : (
               <div className="panel">
@@ -295,12 +293,7 @@ function App() {
                   setAdmin(false);
                 }}
               >
-                {error && (
-                  <p className="alert" role="alert">
-                    {error}
-                  </p>
-                )}
-                {message && <p role="status">{message}</p>}
+                <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />
                 <fieldset disabled={busy} className="unboxed">
                   {editing ? (
                     <POForm
@@ -411,6 +404,9 @@ function Overview({
       "submitted",
     ],
   ];
+  const activeFilterCount = [search, status, area, vendor, requester, approval].filter(Boolean).length;
+  const secondaryFilterCount = [area, vendor, requester].filter(Boolean).length;
+  const clearFilters = () => { setSearch(""); setStatus(""); setArea(""); setVendor(""); setRequester(""); setApproval(""); };
   const queue = d.orders
     .filter(
       (p) =>
@@ -470,8 +466,8 @@ function Overview({
           : d.context.profile.role === "lead"
             ? "My and area purchase orders"
             : "My purchase orders"}
-      </h2><span className="finance-result-count">{queue.length} {queue.length === 1 ? "order" : "orders"}</span></div>
-      <div className="panel filters">
+      </h2><span className="finance-result-count">{queue.length} {queue.length === 1 ? "order" : "orders"}</span>{activeFilterCount > 0 && <button className="secondary clear-filters" onClick={clearFilters}>Clear filters</button>}</div>
+      <div className="panel filters order-filters">
         <label className="search">
           Search
           <input
@@ -499,6 +495,24 @@ function Overview({
             ))}
           </select>
         </label>
+        <label>
+          Approval state
+          <select
+            value={approval}
+            onChange={(e) => setApproval(e.target.value)}
+          >
+            <option value="">All approvals</option>
+            <option value="mine">Needs your approval</option>
+            <option value="waiting">Waiting on other approval</option>
+            <option value="ready">Ready for school</option>
+            <option value="submitted">Submitted</option>
+            <option value="finance_approver">Finance Lead pending</option>
+            <option value="po_approver">Lead Coach pending</option>
+          </select>
+        </label>
+        <details className="secondary-filters">
+          <summary>More filters{secondaryFilterCount > 0 && <span className="filter-count">{secondaryFilterCount} applied</span>}</summary>
+          <div className="secondary-filter-fields">
         <label>
           Area
           <select value={area} onChange={(e) => setArea(e.target.value)}>
@@ -535,21 +549,8 @@ function Overview({
               ))}
           </select>
         </label>
-        <label>
-          Approval state
-          <select
-            value={approval}
-            onChange={(e) => setApproval(e.target.value)}
-          >
-            <option value="">All approvals</option>
-            <option value="mine">Needs your approval</option>
-            <option value="waiting">Waiting on other approval</option>
-            <option value="ready">Ready for school</option>
-            <option value="submitted">Submitted</option>
-            <option value="finance_approver">Finance Lead pending</option>
-            <option value="po_approver">Lead Coach pending</option>
-          </select>
-        </label>
+          </div>
+        </details>
       </div>
       {!queue.length ? (
         <div className="panel empty finance-empty">
