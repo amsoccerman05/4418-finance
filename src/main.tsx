@@ -343,8 +343,15 @@ function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    ref.current!.showModal();
-    return () => ref.current?.close();
+    const dialog = ref.current!;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
+    return () => {
+      // React clears the ref before passive unmount cleanup. Keep the element
+      // and the original trigger so Close and Escape restore keyboard focus.
+      dialog.close();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <dialog
@@ -515,7 +522,7 @@ function Overview({
           <div className="secondary-filter-fields">
         <label>
           Area
-          <select value={area} onChange={(e) => setArea(e.target.value)}>
+          <select aria-label="Area" value={area} onChange={(e) => setArea(e.target.value)}>
             <option value="">All areas</option>
             {d.context.areas.map((a) => (
               <option key={a.id} value={a.id}>

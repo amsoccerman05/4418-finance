@@ -8,9 +8,14 @@ for (const width of [390, 700, 1440]) {
     await page.goto('/#orders');
     await expect(page.getByLabel('Search', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Approval state')).toBeVisible();
-    await expect(page.getByLabel('Area', { exact: true })).toBeHidden();
+    const areaFilter = page.getByLabel('Area', { exact: true });
+    await expect(areaFilter).toHaveCount(1);
+    await expect(areaFilter).toBeHidden();
     await page.locator('.secondary-filters > summary').click();
-    await page.getByLabel('Area', { exact: true }).selectOption('area');
+    await expect(page.locator('.secondary-filters')).toHaveAttribute('open', '');
+    await expect(areaFilter).toBeVisible();
+    await expect(areaFilter.locator('option[value="area"]')).toHaveText('Power');
+    await areaFilter.selectOption('area');
     await expect(page.locator('.secondary-filters > summary')).toContainText('1 applied');
     await page.locator('.secondary-filters > summary').click();
     await page.getByLabel('Search', { exact: true }).fill('missing');
