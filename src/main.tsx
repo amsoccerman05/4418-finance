@@ -1,3 +1,5 @@
+import { FinancePageHeader } from "./FinancePageHeader";
+import { Plus, FileText, ChevronRight, ClipboardCheck, Clock3, Send, CheckCheck } from "lucide-react";
 import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspaces } from './BudgetWorkspace';
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
@@ -160,21 +162,9 @@ function App() {
 
       <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
       <main id="main">
-        {workspace==='orders'&&<div className="page-heading">
-          <div>
-            <span className="eyebrow">TEAM 4418 / FINANCE</span>
-            <h1>Purchase orders</h1>
-            <p>
-              The Google Sheet is your PO. Finance keeps its approvals moving.
-            </p>
-          </div>
-          {data?.context.can_create && (
-            <button className="primary" onClick={() => setEditing("new")}>
-              New purchase order
-            </button>
-          )}
-        </div>
-        }
+        {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
+          {data?.context.can_create && <button className="primary" onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
+        </FinancePageHeader>}
         {!client ? (
           <div className="panel">
             Finance setup is pending. Configure the shared public Supabase
@@ -462,24 +452,25 @@ function Overview({
             <button
               key={name}
               className="panel stat"
+              aria-pressed={approval === String(value)}
               onClick={() => {
                 setApproval(String(value));
                 setStatus("");
               }}
             >
+              <span className="stat-heading"><span>{name}</span>{value === "mine" ? <ClipboardCheck size={19} aria-hidden="true" /> : value === "waiting" ? <Clock3 size={19} aria-hidden="true" /> : value === "ready" ? <Send size={19} aria-hidden="true" /> : <CheckCheck size={19} aria-hidden="true" />}</span>
               <strong>{count}</strong>
-              {name}
             </button>
           ))}
         </div>
       )}
-      <h2>
+      <div className="finance-queue-heading"><h2>
         {privileged
           ? "Approval queue"
           : d.context.profile.role === "lead"
             ? "My and area purchase orders"
             : "My purchase orders"}
-      </h2>
+      </h2><span className="finance-result-count">{queue.length} {queue.length === 1 ? "order" : "orders"}</span></div>
       <div className="panel filters">
         <label className="search">
           Search
@@ -561,8 +552,9 @@ function Overview({
         </label>
       </div>
       {!queue.length ? (
-        <div className="panel empty">
-          No purchase orders in this view.{" "}
+        <div className="panel empty finance-empty">
+          <FileText className="empty-icon" size={28} aria-hidden="true" />
+          <h3>No purchase orders in this view.</h3>{" "}
           {d.context.can_create
             ? "Create a request or adjust your filters."
             : "Requests will appear when you have access."}
@@ -586,10 +578,7 @@ function Overview({
                   {d.context.areas.find((a) => a.id === p.area_id)?.name}
                 </small>
               </div>
-              <div>
-                <strong>{money(p.amount)}</strong>
-                <Badge status={p.status} />
-              </div>
+              <div className="po-row-summary"><div><strong>{money(p.amount)}</strong><Badge status={p.status} /></div><ChevronRight size={20} aria-hidden="true" /></div>
             </button>
           ))}
         </div>
@@ -1089,3 +1078,4 @@ createRoot(document.getElementById("root")!).render(
 );
 
 import "./design-system.css";
+import "./finance-polish.css";
