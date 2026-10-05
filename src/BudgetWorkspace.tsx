@@ -1,3 +1,4 @@
+import { FinancePageHeader } from "./FinancePageHeader";
 import { FinanceExport } from "./FinanceExport";
 import { Analytics, RecentActivity } from "./FinanceAnalytics";
 import { BudgetRows } from "./FinanceBudgetRows";
@@ -11,6 +12,10 @@ import {
   ClipboardList,
   Settings,
   Menu,
+  ArrowUpRight,
+  ShieldCheck,
+  Home,
+  Plus,
 } from "lucide-react";
 import { money, label, when, needsMe, type Data, type PO } from "./service";
 import {
@@ -56,6 +61,7 @@ export function FinanceNav({
       >
         <Menu size={20} /> Finance menu
       </button>
+      <div className="finance-nav-label" aria-hidden="true">WORKSPACE</div>
       <nav
         id="finance-navigation"
         aria-label="Finance workspace"
@@ -79,7 +85,9 @@ export function FinanceNav({
               {name}
             </a>
           ))}
+      <a className="finance-home" href="https://team.frc4418.org/"><Home size={18} aria-hidden="true" />Team Hub / Home</a>
       </nav>
+      <div className="finance-nav-note"><ShieldCheck size={18} aria-hidden="true" /><span>Team finance<small>Plan. Review. Track.</small></span></div>
     </aside>
   );
 }
@@ -246,12 +254,14 @@ export function BudgetWorkspace({
   data,
   run,
   openPO,
+  newPO,
   assignments,
 }: {
   page: Workspace;
   data: Data;
   run: Run;
   openPO: (id: string) => void;
+  newPO: () => void;
   assignments: ReactNode;
 }) {
   const [budget, setBudget] = useState<Budget | null>(null),
@@ -353,7 +363,19 @@ export function BudgetWorkspace({
   const attentionPanel = attention.length > 0 ? <section className="panel attention-panel"><h2>Needs attention</h2><ul>{attention.map((p)=><li key={p.id}><button className="secondary" onClick={()=>openPO(p.id)}>PO {p.po_number} · {p.vendor} · {p.status === 'approved' ? 'Submit to school' : 'Review purchase'}</button></li>)}</ul></section> : null;
   return (
     <section className="budget-workspace" key={`${s?.id}-${s?.version}`}>
-      <header className="finance-page-title"><h1>{page === "dashboard" && s ? `${s.name} Finance` : workspaces.find(([id]) => id === page)?.[1]}</h1>{s && <span className={`finance-badge ${s.status}`}>{label(s.status)}</span>}</header>
+      <FinancePageHeader
+        title={page === "dashboard" && s ? `${s.name} Finance` : workspaces.find(([id]) => id === page)?.[1] || "Finance"}
+        description={{dashboard: "Your season finances, priorities and recent activity in one place.", orders: "Track purchase orders through each approval.", budget: "Plan each category and keep a clear view of available funds.", income: "Track received funding and the income you are expecting.", expenses: "Record other spending, returns and credits for the season.", reports: "Review the season and export your financial records.", settings: "Manage seasons, finance assignments and budget access."}[page]}
+        badge={s && <span className={`finance-badge ${s.status}`}>{label(s.status)}</span>}
+      >
+        {budget?.can_manage && <label className="season-picker">
+          Budget season
+          <select value={s?.id || ""} onChange={(e) => setSeason(e.target.value)}>
+            <option value="">Choose season</option>
+            {budget.seasons.map((x) => <option key={x.id} value={x.id}>{x.name} · {label(x.status)}</option>)}
+          </select>
+        </label>}
+      </FinancePageHeader>
       {error && <p role="alert">{error}</p>}
       {page === "dashboard" && !budget?.can_manage && attentionPanel}
       {!budget && !error && <p role="status">Loading Finance…</p>}
@@ -366,25 +388,12 @@ export function BudgetWorkspace({
       {budget?.can_manage && (
         <>
           {budget.summary && budget.summary.allocated > 0 && budget.summary.actual_funding === 0 && <aside className="panel funding-warning"><h2>Allocated without funding</h2><p>Your categories have allocations, but no starting funds or received income have been recorded. Expected income is still a plan.</p><a href={s?.status === "draft" ? "#budget" : "#settings"}>Set starting funds</a>{" · "}<a href="#income">Record received income</a></aside>}
-          <label className="season-picker">
-            Budget season
-            <select
-              value={s?.id || ""}
-              onChange={(e) => setSeason(e.target.value)}
-            >
-              <option value="">Choose season</option>
-              {budget.seasons.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name} · {label(x.status)}
-                </option>
-              ))}
-            </select>
-          </label>
           {!s && (
-            <div className="panel">
+            <div className="panel finance-empty">
+              <Wallet className="empty-icon" size={28} aria-hidden="true" />
               <h2>No active budget</h2>
               <p>Create a season budget to start tracking team finances.</p>
-              <a href="#budget">Set up a season</a>
+              <a className="secondary" href="#budget">Set up a season</a>
             </div>
           )}
           {((page === "budget" && !s) || page === "settings") && (
@@ -434,7 +443,7 @@ export function BudgetWorkspace({
                 <strong>{s.name}</strong> · {label(s.status)}
                 {s.status === "closed" && " · Historical records are read-only"}
               </p>}
-              {page === "dashboard" && <p className="workspace-links"><a href="#budget">{s.status === "draft" ? "Continue budget setup" : "View category balances"}</a><a href="#income">Track income</a><a href="#expenses">Other spending & credits</a></p>}
+              {page === "dashboard" && <nav className="workspace-links" aria-label="Finance quick links"><a href="#budget"><Wallet size={19} aria-hidden="true" /><span>{s.status === "draft" ? "Continue budget setup" : "View category balances"}</span><ArrowUpRight size={17} aria-hidden="true" /></a><a href="#income"><HandCoins size={19} aria-hidden="true" /><span>Track income</span><ArrowUpRight size={17} aria-hidden="true" /></a><a href="#expenses"><Receipt size={19} aria-hidden="true" /><span>Other spending & credits</span><ArrowUpRight size={17} aria-hidden="true" /></a></nav>}
               {(page === 'dashboard' || page === 'reports') && <Analytics key={`analytics-${s.id}`} budget={budget} reports={page==='reports'}>{page==='dashboard' && attentionPanel}</Analytics>}
               {page === 'dashboard' && <>
                 {(exceptions.length>0||overdue.length>0)&&<section className="panel attention-panel"><h2>Budget watch</h2><ul>{exceptions.map(c=><li key={c.id}><a href="#budget">{c.name}</a> · {c.available<0?`${money(-c.available)} over budget`:`${money(c.available)} available · 10% or less remaining`}</li>)}{overdue.map(i=><li key={i.id}><a href="#income">{i.source}</a> · {money(i.amount)} expected on {i.expected_on}</li>)}</ul><small>Planning reminders only; these do not block purchases.</small></section>}
@@ -570,7 +579,8 @@ export function BudgetWorkspace({
                 <>
                   <dl className="budget-totals"><div><dt>Received income</dt><dd>{money(b?.received || 0)}</dd></div><div><dt>Expected · not yet received</dt><dd>{money(b?.expected || 0)}</dd></div></dl>
                   {!budget.income.length && (
-                    <div className="panel">
+                    <div className="panel finance-empty">
+                      <HandCoins className="empty-icon" size={28} aria-hidden="true" />
                       <h2>No income recorded yet</h2>
                       <p>
                         Add sponsorships, grants, fundraising, and other team
@@ -595,7 +605,7 @@ export function BudgetWorkspace({
                     only other spending here.
                   </p>
                   <dl className="budget-totals"><div><dt>Total spent · POs and other expenses, after credits</dt><dd>{money(b?.spent || 0)}</dd></div><div><dt>Credits recorded</dt><dd>{money(b?.credits || 0)}</dd></div></dl>
-                  {!budget.expenses.length && <h2>No manual expenses</h2>}
+                  {!budget.expenses.length && <div className="panel finance-empty"><Receipt className="empty-icon" size={28} aria-hidden="true" /><h2>No manual expenses</h2><p>Other spending and credits will appear here. Purchase orders are tracked automatically.</p></div>}
                   {s.status === "draft" && <p>Activate the budget before recording expenses or credits.</p>}
                   {editable &&
                     s.status === "active" &&
@@ -786,10 +796,12 @@ export function BudgetWorkspace({
         </section>
       )}
       {page === "dashboard" && !budget?.can_manage && (
-        <p>
-          Your purchase orders and their approval history are available in
-          Purchase Orders.
-        </p>
+        <div className="panel finance-empty">
+          <FileText className="empty-icon" size={28} aria-hidden="true" />
+          <h2>Your purchase orders</h2>
+          <p>Your purchase orders and their approval history are available in Purchase Orders.</p>
+          <div className="finance-empty-actions">{data.context.can_create && <button className="primary" onClick={newPO}><Plus size={18} aria-hidden="true" />New purchase order</button>}<a className="secondary" href="#orders">View purchase orders</a></div>
+        </div>
       )}
     </section>
   );

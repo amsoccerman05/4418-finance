@@ -61,7 +61,7 @@ export function FinanceExport({ season }: { season: Season }) {
           expenses, history and summary charts.
         </p>
       </div>
-      <button type="button" onClick={download} disabled={busy}>
+      <button className="primary" type="button" onClick={download} disabled={busy}>
         <Download size={18} aria-hidden="true" />
         {busy ? "Preparing workbook…" : "Download Finance Workbook (.xlsx)"}
       </button>

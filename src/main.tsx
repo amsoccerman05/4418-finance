@@ -1,3 +1,6 @@
+import { FinanceFeedback } from "./FinanceFeedback";
+import { FinancePageHeader } from "./FinancePageHeader";
+import { Plus, FileText, ChevronRight, ClipboardCheck, Clock3, Send, CheckCheck } from "lucide-react";
 import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspaces } from './BudgetWorkspace';
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
@@ -57,6 +60,7 @@ function App() {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
+    [pendingMessage, setPendingMessage] = useState("Saving changes…"),
     [selected, setSelected] = useState<string | null>(null),
     [editing, setEditing] = useState<PO | "new" | null>(null),
     [admin, setAdmin] = useState(false),
@@ -133,6 +137,7 @@ function App() {
   }, []);
   async function run(work: () => Promise<unknown>, text = "Saved") {
     setBusy(true);
+    setPendingMessage(text === "Refreshed" ? "Refreshing Finance…" : text === "Signed out" ? "Signing out…" : "Saving changes…");
     setError("");
     setMessage("");
     const gen = generation.current;
@@ -160,21 +165,9 @@ function App() {
 
       <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
       <main id="main">
-        {workspace==='orders'&&<div className="page-heading">
-          <div>
-            <span className="eyebrow">TEAM 4418 / FINANCE</span>
-            <h1>Purchase orders</h1>
-            <p>
-              The Google Sheet is your PO. Finance keeps its approvals moving.
-            </p>
-          </div>
-          {data?.context.can_create && (
-            <button className="primary" onClick={() => setEditing("new")}>
-              New purchase order
-            </button>
-          )}
-        </div>
-        }
+        {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
+          {data?.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
+        </FinancePageHeader>}
         {!client ? (
           <div className="panel">
             Finance setup is pending. Configure the shared public Supabase
@@ -182,12 +175,7 @@ function App() {
           </div>
         ) : (
           <>
-            {error && (
-              <p role="alert" className="alert">
-                {error}
-              </p>
-            )}
-            {message && <p role="status">{message}</p>}
+            {!(data && (po || editing || admin)) && <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />}
             {loading ? (
               <p role="status">Loading Finance…</p>
             ) : !signed ? (
@@ -280,7 +268,7 @@ function App() {
             ) : data ? (
               <>
                 <div className="toolbar"><button className="secondary" disabled={busy} onClick={()=>void run(async()=>{},'Refreshed')}>Refresh</button></div>
-                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
+                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} newPO={()=>setEditing("new")} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
               </>
             ) : (
               <div className="panel">
@@ -305,12 +293,7 @@ function App() {
                   setAdmin(false);
                 }}
               >
-                {error && (
-                  <p className="alert" role="alert">
-                    {error}
-                  </p>
-                )}
-                {message && <p role="status">{message}</p>}
+                <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />
                 <fieldset disabled={busy} className="unboxed">
                   {editing ? (
                     <POForm
@@ -360,8 +343,15 @@ function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    ref.current!.showModal();
-    return () => ref.current?.close();
+    const dialog = ref.current!;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
+    return () => {
+      // React clears the ref before passive unmount cleanup. Keep the element
+      // and the original trigger so Close and Escape restore keyboard focus.
+      dialog.close();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <dialog
@@ -421,6 +411,9 @@ function Overview({
       "submitted",
     ],
   ];
+  const activeFilterCount = [search, status, area, vendor, requester, approval].filter(Boolean).length;
+  const secondaryFilterCount = [area, vendor, requester].filter(Boolean).length;
+  const clearFilters = () => { setSearch(""); setStatus(""); setArea(""); setVendor(""); setRequester(""); setApproval(""); };
   const queue = d.orders
     .filter(
       (p) =>
@@ -462,25 +455,26 @@ function Overview({
             <button
               key={name}
               className="panel stat"
+              aria-pressed={approval === String(value)}
               onClick={() => {
                 setApproval(String(value));
                 setStatus("");
               }}
             >
+              <span className="stat-heading"><span>{name}</span>{value === "mine" ? <ClipboardCheck size={19} aria-hidden="true" /> : value === "waiting" ? <Clock3 size={19} aria-hidden="true" /> : value === "ready" ? <Send size={19} aria-hidden="true" /> : <CheckCheck size={19} aria-hidden="true" />}</span>
               <strong>{count}</strong>
-              {name}
             </button>
           ))}
         </div>
       )}
-      <h2>
+      <div className="finance-queue-heading"><h2>
         {privileged
           ? "Approval queue"
           : d.context.profile.role === "lead"
             ? "My and area purchase orders"
             : "My purchase orders"}
-      </h2>
-      <div className="panel filters">
+      </h2><span className="finance-result-count">{queue.length} {queue.length === 1 ? "order" : "orders"}</span>{activeFilterCount > 0 && <button className="secondary clear-filters" onClick={clearFilters}>Clear filters</button>}</div>
+      <div className="panel filters order-filters">
         <label className="search">
           Search
           <input
@@ -509,8 +503,26 @@ function Overview({
           </select>
         </label>
         <label>
+          Approval state
+          <select
+            value={approval}
+            onChange={(e) => setApproval(e.target.value)}
+          >
+            <option value="">All approvals</option>
+            <option value="mine">Needs your approval</option>
+            <option value="waiting">Waiting on other approval</option>
+            <option value="ready">Ready for school</option>
+            <option value="submitted">Submitted</option>
+            <option value="finance_approver">Finance Lead pending</option>
+            <option value="po_approver">Lead Coach pending</option>
+          </select>
+        </label>
+        <details className="secondary-filters">
+          <summary>More filters{secondaryFilterCount > 0 && <span className="filter-count">{secondaryFilterCount} applied</span>}</summary>
+          <div className="secondary-filter-fields">
+        <label>
           Area
-          <select value={area} onChange={(e) => setArea(e.target.value)}>
+          <select aria-label="Area" value={area} onChange={(e) => setArea(e.target.value)}>
             <option value="">All areas</option>
             {d.context.areas.map((a) => (
               <option key={a.id} value={a.id}>
@@ -544,25 +556,13 @@ function Overview({
               ))}
           </select>
         </label>
-        <label>
-          Approval state
-          <select
-            value={approval}
-            onChange={(e) => setApproval(e.target.value)}
-          >
-            <option value="">All approvals</option>
-            <option value="mine">Needs your approval</option>
-            <option value="waiting">Waiting on other approval</option>
-            <option value="ready">Ready for school</option>
-            <option value="submitted">Submitted</option>
-            <option value="finance_approver">Finance Lead pending</option>
-            <option value="po_approver">Lead Coach pending</option>
-          </select>
-        </label>
+          </div>
+        </details>
       </div>
       {!queue.length ? (
-        <div className="panel empty">
-          No purchase orders in this view.{" "}
+        <div className="panel empty finance-empty">
+          <FileText className="empty-icon" size={28} aria-hidden="true" />
+          <h3>No purchase orders in this view.</h3>{" "}
           {d.context.can_create
             ? "Create a request or adjust your filters."
             : "Requests will appear when you have access."}
@@ -586,10 +586,7 @@ function Overview({
                   {d.context.areas.find((a) => a.id === p.area_id)?.name}
                 </small>
               </div>
-              <div>
-                <strong>{money(p.amount)}</strong>
-                <Badge status={p.status} />
-              </div>
+              <div className="po-row-summary"><div><strong>{money(p.amount)}</strong><Badge status={p.status} /></div><ChevronRight size={20} aria-hidden="true" /></div>
             </button>
           ))}
         </div>
@@ -1089,3 +1086,4 @@ createRoot(document.getElementById("root")!).render(
 );
 
 import "./design-system.css";
+import "./finance-polish.css";
