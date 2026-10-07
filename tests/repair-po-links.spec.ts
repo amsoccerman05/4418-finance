@@ -66,6 +66,7 @@ async function setup(withBridge = true, withPit = true) {
       ('${otherIssue}','${event}','Electrical repair','Electrical','HIGH','DEFERRED','Inspect wiring','${ids.student}',null);`);
   }
   if (withBridge) await db.exec(sql(migration));
+  await db.exec(sql('supabase/migrations/20261007011342_allow_all_active_student_purchase_requests.sql'));
 }
 test.beforeEach(async () => { await setup(); });
 test.afterEach(async () => { await db.close(); });

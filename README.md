@@ -2,6 +2,10 @@
 
 Purchase-order approval and school-submission tracking. The school's Google Sheet remains the authoritative document. No spreadsheet API, line-item form, budgeting, accounting, receipts, Inventory operations or notifications are included.
 
+## Student purchase requests
+
+The additive `20261007011342_allow_all_active_student_purchase_requests.sql` migration permits every active student profile to create and submit its own PO, including students with no attendance registration record. It preserves the existing Finance Lead and Lead Coach approval workflow and all other permissions. The deployed frontend already uses the server's eligibility decision, so this fix does not require a frontend deployment. Review [the exact access change and release checks](docs/STUDENT-REQUEST-ACCESS.md) before applying it.
+
 ## Local setup
 
 1. `npm ci`

@@ -4,7 +4,7 @@
 
 Finance reads `profiles(id, display_name, role, active, primary_area_id)`, `areas(id, name, active)`, and `team_attendance_members(student_id, member_status)`. The migration fails before creating Finance objects if these contracts are missing. Areas are the same shared taxonomy already referenced by profiles: no duplicate Finance area table, seed, renamed area, or Inventory item/stock/location dependency. Existing area names remain authoritative, including any inactive historical area referenced by a PO.
 
-Registration currently lives in Attendance's separate member metadata. Active registered students may create; active leads and Finance administrators may also create. Prospective/inactive students do not gain creation permissions. A former registered but still active requester can still finish their own existing PO. Changing this policy later requires changing `finance_private.creator`, not the shared profile schema.
+After applying `20261007011342_allow_all_active_student_purchase_requests.sql`, every active student profile may create and submit its own purchase orders, regardless of attendance registration status or whether an attendance record exists. Active leads and Finance administrators retain their existing access. Inactive profiles, read-only roles, missing profiles, and anonymous callers cannot create requests. The change is isolated to `finance_private.creator`; shared profile roles, approval positions, RLS, and school-submission permissions are unchanged. See [student-request release review](STUDENT-REQUEST-ACCESS.md).
 
 ## Five tables
 
