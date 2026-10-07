@@ -148,6 +148,73 @@ async function mock(page: Page, capabilities: string[] = [], isAdmin = false) {
   );
   return { orders, approvals, calls, context };
 }
+
+for (const width of [390, 1440])
+  test(`active student without registration or a position can submit and resubmit once ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    // Finance uses the server's can_create decision. It must not require an
+    // attendance record, registration flag, or leadership position in the UI.
+    const { orders, calls, context } = await mock(page);
+    expect(context.profile.role).toBe('student');
+    expect(context.capabilities).toEqual([]);
+    let release!: () => void;
+    let pendingAction = 'create';
+    let pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/rpc/finance_mutate', async route => {
+      if (route.request().postDataJSON().action === pendingAction) await pending;
+      await route.fallback();
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'New purchase order', exact: true }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Google Sheet URL').fill('https://docs.google.com/spreadsheets/d/StudentRequest/edit');
+    await dialog.getByLabel('Vendor', { exact: true }).fill('Student supplier');
+    await dialog.getByLabel('Total amount (USD)').fill('125.50');
+    await dialog.getByLabel('Functional area').selectOption('area');
+    await dialog.getByLabel('Purpose / short description').fill('Student robot request');
+    const save = dialog.getByRole('button', { name: 'Save draft', exact: true });
+    await save.click();
+    await expect(save).toBeDisabled();
+    await save.evaluate((button: HTMLButtonElement) => button.click());
+    release();
+    await expect(dialog.getByRole('button', { name: 'Submit for approval', exact: true })).toBeVisible();
+    expect(calls.filter(call => call.action === 'create')).toHaveLength(1);
+
+    pendingAction = 'submit';
+    pending = new Promise<void>(resolve => { release = resolve; });
+    const submit = dialog.getByRole('button', { name: 'Submit for approval', exact: true });
+    await submit.click();
+    await expect(submit).toBeDisabled();
+    await submit.evaluate((button: HTMLButtonElement) => button.click());
+    release();
+    await expect(dialog.getByText('Awaiting Approval', { exact: true })).toBeVisible();
+    expect(calls.filter(call => call.action === 'submit')).toHaveLength(1);
+    await expect(dialog.getByRole('button', { name: /Approve|Mark submitted to school|Request changes/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Budget', exact: true })).toHaveCount(0);
+
+    // Simulate a reviewer's response in the intercepted fixture, then exercise
+    // the unchanged requester edit/resubmission path in the actual browser UI.
+    orders[0].status = 'changes_requested';
+    orders[0].version++;
+    pendingAction = '';
+    await page.goto('/#orders');
+    await page.reload();
+    await page.getByRole('button', { name: /Student supplier/ }).click();
+    dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('button', { name: 'Resubmit for approval', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Edit purchase order', exact: true }).click();
+    await dialog.getByLabel('Total amount (USD)').fill('140.50');
+    await dialog.getByRole('button', { name: 'Save draft', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Resubmit for approval', exact: true }).click();
+    await expect(dialog.getByText('Awaiting Approval', { exact: true })).toBeVisible();
+    expect(calls.map(call => call.action)).toEqual(['create', 'submit', 'edit', 'submit']);
+    expect(orders[0].revision).toBe(2);
+    expect(calls.every(call => !('requester_id' in call.p))).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await dialog.screenshot({ path: `test-results/active-student-request-${width}.png` });
+  });
+
 for (const width of [390, 1440])
   test(`student draft and submit, no duplicate sheet form, ${width}px`, async ({
     page,
