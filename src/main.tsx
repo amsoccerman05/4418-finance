@@ -154,35 +154,15 @@ function App() {
       setBusy(false);
     }
   }
-  if(!signed)return <AuthSurface redirect={!!client&&!loading&&!error}>{error||!client?<><p role="alert">Unable to connect securely. Please try again.</p><a href="https://team.frc4418.org/">Team sign in</a></>:undefined}</AuthSurface>;
-  const po = data?.orders.find((p) => p.id === selected);
-  return (
-    <>
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
-      <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
-
-      <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
-      <main id="main">
-        {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
-          {data?.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
-        </FinancePageHeader>}
-        {!client ? (
-          <div className="panel">
-            Finance setup is pending. Configure the shared public Supabase
-            environment after schema review.
-          </div>
-        ) : (
-          <>
-            {!(data && (po || editing || admin)) && <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />}
-            {loading ? (
-              <p role="status">Loading Finance…</p>
-            ) : !signed ? (
-              <form
+  if (!signed) return <AuthSurface>
+    {error && <p role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}
+    {!client ? <p role="alert">Unable to connect securely. Please try again.</p> : loading ? <p role="status">Connecting securely…</p> : (
+<form
                 className="panel form auth"
                 onSubmit={(e) => {
                   const f = fields(e);
+                  if (busy) return;
                   void run(async () => {
                     const r = await client!.auth.signInWithPassword({
                       email: f.email,
@@ -192,7 +172,7 @@ function App() {
                   }, "");
                 }}
               >
-                <h2>Team sign-in</h2>
+                <h1>Finance sign in</h1>
                 <p>Use your existing Team 4418 account.</p>
                 <label>
                   Email
@@ -238,6 +218,32 @@ function App() {
                   Reset password
                 </button>
               </form>
+    )}
+    <p><a href="https://team.frc4418.org/">Team Hub / Home</a></p>
+  </AuthSurface>;
+  const po = data?.orders.find((p) => p.id === selected);
+  return (
+    <>
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
+
+      <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
+      <main id="main">
+        {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
+          {data?.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
+        </FinancePageHeader>}
+        {!client ? (
+          <div className="panel">
+            Finance setup is pending. Configure the shared public Supabase
+            environment after schema review.
+          </div>
+        ) : (
+          <>
+            {!(data && (po || editing || admin)) && <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />}
+            {loading ? (
+              <p role="status">Loading Finance…</p>
             ) : recovery ? (
               <form
                 className="panel form"
