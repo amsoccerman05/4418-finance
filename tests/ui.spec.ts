@@ -384,9 +384,10 @@ test("stalled data request has a bounded error state", async ({ page }) => {
   await expect(page.getByText("Loading Finance…")).toHaveCount(0);
 });
 test("signed out users see sign-in", async ({page}) => {
- await page.route("https://team.frc4418.org/",r=>r.fulfill({contentType:"text/html",body:"<h1>Team sign in</h1>"}));
   await page.goto("/#orders");
-  await expect(page).toHaveURL("https://team.frc4418.org/");
+  await expect(page.getByRole("heading", {name: "Finance sign in"})).toBeVisible();
+  await expect(page).toHaveURL(/\/#orders$/);
+  await expect(page.locator(".suite-header")).toHaveCount(0);
 });
 for(const width of [390,1440])test(`email deep link opens only a loaded permitted PO ${width}`,async({page})=>{
  await page.setViewportSize({width,height:900});const {orders}=await mock(page);const id='10000000-0000-0000-0000-000000000027';

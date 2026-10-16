@@ -23,7 +23,7 @@ export function createSuiteClient(
     return createClient(url, key, fallback);
   // A Hub-opened app talks to its first-party opener, not an isolated iframe.
   // Referrer selects the transport; every reply still checks origin AND source.
-  const firstParty = location.origin !== hub && window.opener &&
+  let firstParty = location.origin !== hub && window.opener &&
     document.referrer && new URL(document.referrer).origin === hub
       ? window.opener as Window : null;
   const children = new Map<Window, string>();
@@ -46,24 +46,28 @@ export function createSuiteClient(
     }
   >();
   let session: Session | null = null;
-  const ready = new Promise<void>((resolve, reject) => {
-    if (firstParty) { resolve(); return; }
-    const timer = setTimeout(
-      () =>
-        reject(
-          new Error("Team sign-in is unavailable. Reload or open Team Hub."),
-        ),
-      15000,
-    );
-    frame.onload = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-  });
-  // A failed bootstrap is surfaced through the normal getSession/login paths.
-  void ready.catch(() => {});
+  let authVersion = 0;
+  let frameReady: Promise<void> | null = null;
+  let frameLoaded = false;
+  function connectFrame() {
+    if (frameLoaded) return Promise.resolve();
+    if (frameReady) return frameReady;
+    frameReady = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        frameReady = null;
+        reject(new Error("Team sign-in is unavailable. Try again or open Team Hub."));
+      }, 15000);
+      frame.onload = () => { frameLoaded = true; clearTimeout(timer); resolve(); };
+      document.body.append(frame);
+    });
+    void frameReady.catch(() => {});
+    return frameReady;
+  }
   async function request(method: string, args: unknown[] = []) {
-    await ready;
+    // Closing the launch tab is not a sign-out. Reconnect to the same existing
+    // broker used by direct visits; it alone decides whether a session exists.
+    if (firstParty?.closed) firstParty = null;
+    if (!firstParty) await connectFrame();
     return new Promise<any>((resolve, reject) => {
       const id = crypto.randomUUID();
       const timer = setTimeout(() => {
@@ -76,12 +80,19 @@ export function createSuiteClient(
   }
   const dataClient = createClient(url, key, {
     accessToken: async () => {
+      const version = authVersion, actorId = session?.user.id;
       const r = await request("getSession");
       if (r.error) throw new Error(r.error.message);
+      if (version !== authVersion) {
+        if (!actorId || actorId !== session?.user.id)
+          throw new Error("Your account changed. Retry from the current account.");
+        return session?.access_token ?? null;
+      }
       return r.data.session?.access_token ?? null;
     },
   });
   function emit(event: AuthChangeEvent, next: Session | null) {
+    authVersion++;
     session = next;
     void dataClient.realtime.setAuth(next?.access_token ?? key);
     if (!next) void dataClient.removeAllChannels();
@@ -131,7 +142,7 @@ export function createSuiteClient(
     pending.delete(e.data.id);
     p.resolve(e.data.result);
   });
-  if (!firstParty) document.body.append(frame);
+  if (!firstParty) void connectFrame();
   if (location.origin === hub) {
     // One shared handler covers Quick access, the suite switcher and PO links.
     // Open synchronously during the user gesture so mobile popup rules permit it.
@@ -155,6 +166,7 @@ export function createSuiteClient(
       access = hash.get("access_token"),
       refresh = hash.get("refresh_token");
     let result;
+    const version = authVersion;
     if (code || (access && refresh)) {
       // Consume existing Supabase callback values; never generate token URLs.
       query.delete("code");
@@ -171,36 +183,40 @@ export function createSuiteClient(
       );
     } else result = await request("getSession");
     if (result.error) throw new Error(result.error.message);
-    emit(
-      query.has("password-reset") || hash.get("type") === "recovery"
-        ? "PASSWORD_RECOVERY"
-        : "INITIAL_SESSION",
-      result.data.session,
-    );
+    const recovery = query.has("password-reset") || hash.get("type") === "recovery";
+    if (version === authVersion) emit(recovery ? "PASSWORD_RECOVERY" : "INITIAL_SESSION", result.data.session);
+    else {
+      const current = session as Session | null;
+      if (recovery && current && current.user.id === result.data.session?.user.id)
+        emit("PASSWORD_RECOVERY", current);
+    }
     return result;
   })();
-  void bootstrap.catch(() => emit("INITIAL_SESSION", null));
-  if (firstParty) {
-    // Reconnect after Hub reloads and clear access after it closes/logs out.
-    // These are broker messages only, not app data fetches or credential storage.
-    let checking = false;
-    const check = async () => {
-      if (checking) return;
-      checking = true;
-      try {
-        await bootstrap;
-        if (firstParty.closed) { if (session) emit("SIGNED_OUT", null); return; }
-        const result = await request("getSession");
-        if (result.error) return;
-        const next = result.data.session as Session | null;
-        if (next?.access_token !== session?.access_token)
-          emit(next ? "TOKEN_REFRESHED" : "SIGNED_OUT", next);
-      } catch { /* bounded request failure does not invent a signed-out session */ }
-      finally { checking = false; }
-    };
-    setInterval(() => void check(), 5000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) void check(); });
+  void bootstrap.catch(() => { if (authVersion === 0) emit("INITIAL_SESSION", null); });
+  // Reconcile on resume/reconnect for either transport. A hidden/suspended tab
+  // can miss the broker's refresh notification. Network failures must not invent
+  // a sign-out; expired-token access remains blocked by each app and the server.
+  let checking = false;
+  function reconcile(next: Session | null) {
+    if (next?.access_token !== session?.access_token ||
+        next?.user.id !== session?.user.id || next?.expires_at !== session?.expires_at)
+      emit(next ? "TOKEN_REFRESHED" : "SIGNED_OUT", next);
   }
+  const check = async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      await bootstrap.catch(() => {});
+      const version = authVersion;
+      const result = await request("getSession");
+      if (!result.error && version === authVersion) reconcile(result.data.session);
+    } catch { /* retry on the next resume or check without changing identity */ }
+    finally { checking = false; }
+  };
+  setInterval(() => { if (!document.hidden) void check(); }, 5000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void check(); });
+  window.addEventListener("focus", () => void check());
+  window.addEventListener("online", () => void check());
   const auth = {
     onAuthStateChange(
       cb: (event: AuthChangeEvent, session: Session | null) => void,
@@ -211,7 +227,7 @@ export function createSuiteClient(
           if (listeners.has(cb)) cb("INITIAL_SESSION", session);
         })
         .catch(() => {
-          if (listeners.has(cb)) cb("INITIAL_SESSION", null);
+          if (listeners.has(cb)) cb("INITIAL_SESSION", session);
         });
       return {
         data: { subscription: { unsubscribe: () => listeners.delete(cb) } },
@@ -219,8 +235,12 @@ export function createSuiteClient(
     },
     async getSession() {
       try {
-        await bootstrap;
-        return await request("getSession");
+        await bootstrap.catch(() => {});
+        const version = authVersion;
+        const result = await request("getSession");
+        if (!result.error && version === authVersion) reconcile(result.data.session);
+        // A newer auth event wins over a response already in flight.
+        return !result.error ? { ...result, data: { ...result.data, session } } : result;
       } catch (e) {
         return { data: { session: null }, error: e };
       }
