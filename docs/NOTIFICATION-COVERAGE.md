@@ -14,3 +14,7 @@ Recipients are distinct, active, eligible accounts; the actor is excluded. Exist
 Apply only `202609190001_finance_notification_coverage.sql`, deploy `finance-notifications`, then frontend changes. `202609120004` and the worker baseline are now tracked for reproducible tests; they already exist in production and must not be reapplied.
 
 Finance now handles `#po/{uuid}` links once authorized orders load; inaccessible IDs never open a detail view.
+
+## Current delivery authorization hardening
+
+The additive `20261018051306_finance_notification_delivery_authorization.sql` migration and patched worker recheck current PO access and event-audience membership immediately before every provider call, including frozen retries. See [delivery authorization and rollout](NOTIFICATION-DELIVERY-AUTHORIZATION.md) for the current migration-first deployment order, shared Hub compatibility, and regression tests. The older coverage rollout instructions above describe that earlier change only.

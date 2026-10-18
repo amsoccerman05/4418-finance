@@ -1,7 +1,7 @@
 import {render,type Notification,type Email} from './email.ts';
 import {sendEmail,type DeliveryResult} from './provider.ts';
 export type Account={email?:string;email_confirmed_at?:string;banned_until?:string;deleted_at?:string;active:boolean};
-export type Store={claim:()=>Promise<Notification[]>;account:(id:string,n?:Notification)=>Promise<Account>;prepare:(n:Notification,email:Email)=>Promise<Email>;finish:(n:Notification,r:DeliveryResult|{outcome:'skipped';error_code:string})=>Promise<void>};
+export type Store={claim:()=>Promise<Notification[]>;account:(id:string,n?:Notification)=>Promise<Account>;prepare:(n:Notification,email:Email)=>Promise<Email>;allowed:(n:Notification)=>Promise<boolean>;finish:(n:Notification,r:DeliveryResult|{outcome:'skipped';error_code:string})=>Promise<void>};
 export async function processBatch(store:Store,from:string,deliver:(email:Email,key:string)=>Promise<DeliveryResult>){
  let processed=0,errors=0;
  const safe=(e:unknown)=>e instanceof Error&&/^(server_http_[0-9]{3}|[a-z_]+_http_[0-9]{3})$/.test(e.message)?e.message:'exception';
@@ -19,6 +19,10 @@ export async function processBatch(store:Store,from:string,deliver:(email:Email,
    const request=n.provider_request||render(n,a.email,from);
    stage='prepare';
    const email=await store.prepare(n,request);
+   // Reauthorize every attempt after preparation, including frozen retries.
+   // Only an explicit true permits provider delivery; unavailable checks retry.
+   stage='eligibility';
+   if(await store.allowed(n)!==true){await store.finish(n,{outcome:'skipped',error_code:'recipient_no_longer_eligible'});continue;}
    stage='delivery';
    await store.finish(n,await deliver(email,`impulse-notification/${n.id}`));processed++;
   }catch(e){errors++;
