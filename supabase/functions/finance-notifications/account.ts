@@ -2,6 +2,7 @@ import type {Notification} from './email.ts';
 import type {Account} from './worker.ts';
 type Api=(path:string,body?:unknown)=>Promise<any>;
 export async function deliveryAllowed(api:Api,n:Notification):Promise<boolean>{
+ if(n.source==='attendance')return (await api('/rest/v1/rpc/team_attendance_delivery_allowed',{notification_id:n.id}))===true;
  if(n.source==='hub')return (await api('/rest/v1/rpc/team_announcement_delivery_allowed',{notification_id:n.id}))===true;
  if(n.source!==undefined&&n.source!=='finance')return false;
  return (await api('/rest/v1/rpc/finance_notification_delivery_allowed',{notification_id:n.id,token:n.lease_token}))===true;
@@ -10,6 +11,7 @@ export async function resolveAccount(api:Api,id:string,n?:Notification):Promise<
  const user=await api('/auth/v1/admin/users/'+encodeURIComponent(id));
  // This existing RPC checks active membership and both queued/current audiences.
  // Hub delivery does not require a direct service-role SELECT on shared profiles.
+ if(n?.source==='attendance')return {...user,active:(await api('/rest/v1/rpc/team_attendance_delivery_allowed',{notification_id:n.id}))===true};
  if(n?.source==='hub')return {...user,active:(await api('/rest/v1/rpc/team_announcement_delivery_allowed',{notification_id:n.id}))===true};
  const profiles=await api('/rest/v1/profiles?id=eq.'+encodeURIComponent(id)+'&select=active,role');
  const p=profiles[0];return {...user,active:!!p?.active&&['student','lead','admin','mentor'].includes(p.role)};

@@ -2,6 +2,7 @@ export type Notification = { id:string; event:string; entity_id:string|null; sou
 export type Email = {from:string;to:string[];subject:string;html:string;text:string};
 export const escapeHtml=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export function render(n:Notification,to:string,from:string):Email {
+ if(n.source==='attendance')return renderAttendance(n,to,from);
  if(n.source==='hub')return renderAnnouncement(n,to,from);
  if(!n.entity_id)throw new Error('Finance entity required');
  const p=n.payload,number=String(p.po_number),revision=String(p.revision);
@@ -26,4 +27,13 @@ function renderAnnouncement(n:Notification,to:string,from:string):Email {
  const imageNote=p.has_image?'An image is attached. View it securely in Team Hub.':'';
  return {from,to:[to],subject,text:`4418 IMPULSE\n${priority||'Team announcement'}\n${p.title}\n${p.body}\n${imageNote}\nOpen Team Hub: ${url}`,
  html:`<!doctype html><html><body style="margin:0;background:#fbfbfb;font-family:Arial,sans-serif;color:#333333"><div style="max-width:560px;margin:24px auto;padding:24px;background:white;border:1px solid #d5d5d5;border-top:4px solid ${color};border-radius:12px"><p style="font-weight:bold">4418 IMPULSE</p><p style="color:${color};font-weight:bold">${priority||'Team announcement'}</p><h1 style="font-size:23px;color:#171717">${escapeHtml(p.title)}</h1><p style="font-size:15px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(p.body)}</p>${imageNote?`<p>${imageNote}</p>`:''}<p><a href="${url}" style="display:inline-block;background:#006bb3;color:white;text-decoration:none;padding:14px 20px;border-radius:6px;font-weight:bold">Open Team Hub</a></p><p style="font-size:12px;color:#606060">Sign in with your Team 4418 account.</p></div></body></html>`};
+}
+
+function renderAttendance(n:Notification,to:string,from:string):Email {
+ const titles:Record<string,string>={request_review:'Attendance request needs review',request_approved:'Your attendance request was approved',request_denied:'Your attendance request was denied',strike_assigned:'An attendance notice was recorded'};
+ const title=titles[n.event];if(!title)throw new Error('Unsupported Attendance event');
+ const url='https://team.frc4418.org/#attendance/'+(n.event==='strike_assigned'?'strikes':'notices');
+ const meeting=String(n.payload.meeting||'Team meeting');
+ const date=typeof n.payload.starts_at==='string'?new Date(n.payload.starts_at).toLocaleString('en-US',{timeZone:'America/Denver',dateStyle:'medium',timeStyle:'short'}):'';
+ return {from,to:[to],subject:title,text:`4418 IMPULSE\n${title}\n${meeting}\n${date}\nOpen Attendance: ${url}`,html:`<!doctype html><html><body style="font-family:Arial,sans-serif"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(meeting)}</p><p>${escapeHtml(date)}</p><p><a href="${url}">Open Attendance</a></p><p>Sign in with your Team 4418 account.</p></body></html>`};
 }

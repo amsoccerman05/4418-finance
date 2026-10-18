@@ -17,15 +17,19 @@ An explicit false result skips the notification with `recipient_no_longer_eligib
 
 The recipient visibility predicate intentionally mirrors `finance_private.visible` without impersonating a JWT. If Finance's PO visibility rules change, update this predicate and its tests together. Approval capabilities use the shared Team Hub position model, not obsolete Finance approver assignments.
 
-## Shared Team Hub compatibility
+## Shared Team Hub and Attendance compatibility
 
 This is an additive migration. It does not replace `team_notification_claim`, `team_notification_prepare`, `team_notification_finish`, or the Team Hub announcement RPC. The worker still calls `team_announcement_delivery_allowed(notification_id)` for Hub email and now rechecks it after preparation as well.
+
+A read-only production preflight found Attendance support in deployed worker v12 that was absent from the repository. The production Attendance account branch and renderer are preserved unchanged. Attendance uses its existing `team_attendance_delivery_allowed(notification_id)` RPC for both account eligibility and the final post-prepare gate; valid Attendance messages are not classified as unknown sources. All four existing events (`request_review`, `request_approved`, `request_denied`, and `strike_assigned`), Denver date formatting, minimal message content, and token-free Team Hub links remain unchanged.
+
+All five deployed worker files were compared: `provider.ts` already matched; `index.ts` and `worker.ts` differed only by this fix's eligibility integration; `account.ts` and `email.ts` contained the production-only Attendance additions. The compatibility repair retains the Finance fix and adds no migration or external action.
 
 The database tests load an exact fixture of the shared Hub claim replacement from Team Hub commit `6f8b7b92eb847a6e840efa2285fba0bb14db1437`. Tests verify that applying the new migration leaves that definition intact and preserves email-only claiming. They do not replay every Hub migration or establish production database state.
 
 ## Review and rollout
 
-Prepared against Finance main commit `9ede1a8b87965ac3767a51341bc20cf8c275960d`. No live database queries, migration application, production email, or deployment were performed while preparing this fix.
+The initial source fix was prepared against Finance main commit `9ede1a8b87965ac3767a51341bc20cf8c275960d`. Attendance compatibility was reconciled against read-only production worker v12 and Finance security-fix commit `6f072fccb217849240d756f9d0518a550ffd08ef`. No migration application, production email, or deployment was performed while preparing these changes.
 
 1. Review the additive migration `20261018051306_finance_notification_delivery_authorization.sql`, the worker changes, and CI results. Before an authorized rollout, confirm the deployed shared schema has Finance V1, Team Management positions, and Finance notification coverage, and compare current visibility/claim definitions with the reviewed source.
 2. Apply this new migration once through the approved manual database process. Do not reapply old Finance or Hub migrations. Verify the new RPC's signature, fixed search path, and service-role-only execution grants in the target database; run the appropriate database security advisors during that separately authorized rollout.
@@ -42,9 +46,9 @@ There is no atomic transaction spanning PostgreSQL authorization and an external
 Run the normal repository suite with `npm test` and the build with `npm run build`. Focused tests:
 
 ```sh
-npx playwright test tests/notification-db.spec.ts tests/notification-worker.spec.ts
+npx playwright test tests/notification-db.spec.ts tests/notification-worker.spec.ts tests/notification-attendance-compatibility.spec.ts
 ```
 
-Regressions cover revoked Finance Lead/Lead Coach positions even with retained PO visibility, school-submitter revocation, current fallback limits, inactive/readonly accounts and position catalog entries, lost PO visibility, unknown/mismatched events and spoofed payloads, service-only grants, lease validity, every supported event audience, shared claim preservation, revocation during prepare and frozen retry, and fail-closed/retry behavior on eligibility errors.
+Regressions cover revoked Finance Lead/Lead Coach positions even with retained PO visibility, school-submitter revocation, current fallback limits, inactive/readonly accounts and position catalog entries, lost PO visibility, unknown/mismatched events and spoofed payloads, service-only grants, lease validity, every supported event audience, shared claim preservation, revocation during prepare and frozen retry, and fail-closed/retry behavior on eligibility errors. Attendance compatibility tests cover all four existing renderers, RPC-only account access, the final eligibility gate, denied/error responses, revocation during prepare, and frozen retry behavior.
 
 Database tests use real repository SQL and isolated synthetic PGlite data with fixture prerequisites; worker tests use mocked delivery. They do not inspect production Auth, RLS, deployed migration history, network/provider behavior, or production security-advisor findings.
