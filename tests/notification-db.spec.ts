@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
+import { processBatch, type Store } from "../supabase/functions/finance-notifications/worker";
+import { deliveryAllowed } from "../supabase/functions/finance-notifications/account";
 let db: PGlite;
 const uid = (n: number) =>
   `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
@@ -96,6 +98,8 @@ ${Object.entries(ids)
   await db.exec(readFileSync("supabase/migrations/202609190001_finance_notification_coverage.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/202609200001_finance_budget_core.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/20261007011342_allow_all_active_student_purchase_requests.sql", "utf8"));
+  await db.exec(readFileSync("tests/fixtures/teamhub_notification_claim.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/20261018051306_finance_notification_delivery_authorization.sql", "utf8"));
   await as("admin");
   for (const [who,position_key] of [["finance","finance_lead"],["po","lead_coach_1"],["coach2","lead_coach_2"]] as const) {
     await db.query("select public.team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids[who],position_key,reason:"Season assignment"})]);
@@ -184,4 +188,163 @@ test('cancellation informs involved approvers once, excludes actor and ignores d
 test('final approval combines approval and ready-for-school in one event per recipient',async()=>{
  const id=await fullApproved(),ns=await notices(id,'ready_for_school');expect(ns.map(n=>n.recipient_id).sort()).toEqual([ids.student,ids.submitter].sort());expect(ns.every(n=>n.payload.slot==='po_approver')).toBe(true);
  await act('submitter',id,'school_submit',{reference:'School receipt'});expect((await notices(id,'submitted_to_school')).map(n=>n.recipient_id).sort()).toEqual([ids.student,ids.finance,ids.po].sort());
+});
+
+// All changes below are rolled back; only synthetic in-memory records are used.
+test.describe('live Finance delivery authorization',()=>{
+ test.beforeEach(async()=>{await db.exec("reset role;begin;update team_notifications set status='skipped'");});
+ test.afterEach(async()=>{await db.exec('rollback;reset role');});
+ async function rpc(sql:string,params:unknown[]){
+  // Each real PostgREST RPC has its own transaction. Preserve that error
+  // isolation inside this test's rollback-only transaction with a savepoint.
+  await db.exec('savepoint delivery_rpc');
+  try{const result=await db.query<any>(sql,params);await db.exec('release savepoint delivery_rpc');return result;}
+  catch(error){await db.exec('rollback to savepoint delivery_rpc;release savepoint delivery_rpc');throw error;}
+ }
+ async function change(sql:string,params:unknown[]=[]){await db.exec('reset role');return db.query<any>(sql,params);}
+ async function claimDelivery(id:string,event:string,recipient:string){
+  const n=(await notices(id,event)).find(n=>n.recipient_id===recipient);expect(n).toBeTruthy();
+  await change("update team_notifications set status='skipped'");
+  await change("update team_notifications set status='pending',next_attempt_at=now() where id=$1",[n.id]);
+  await db.exec('set role service_role');
+  const claimed=(await db.query<any>('select * from team_notification_claim(3)')).rows;
+  expect(claimed).toHaveLength(1);expect(claimed[0].id).toBe(n.id);return claimed[0];
+ }
+ async function allowed(n:any,token=n.lease_token){
+  await db.exec('reset role;set role service_role');
+  return (await rpc('select finance_notification_delivery_allowed($1,$2) allowed',[n.id,token])).rows[0].allowed;
+ }
+ async function revoke(who:keyof typeof ids,position:string){
+  await as('admin');
+  const assignment=(await db.query<any>('select id from team_member_positions where user_id=$1 and position_key=$2 and revoked_at is null',[ids[who],position])).rows[0];
+  await db.query("select team_manage('revoke_position',$1::jsonb)",[JSON.stringify({user_id:ids[who],assignment_id:assignment.id,reason:'Delivery revocation regression'})]);
+ }
+ test('RPC is service-only, lease-bound and does not expose shared notifications',async()=>{
+  const id=await submitted(),n=await claimDelivery(id,'approval_needed',ids.finance);
+  expect(await allowed(n)).toBe(true);
+  for(const role of ['anon','authenticated']){
+   await db.exec(`reset role;set role ${role}`);
+   await expect(rpc('select finance_notification_delivery_allowed($1,$2)',[n.id,n.lease_token])).rejects.toThrow(/permission denied/);
+  }
+  expect(await allowed(n,uid(999))).toBe(false);expect(await allowed({...n,id:uid(999)})).toBe(false);
+  await change("update team_notifications set lease_until=clock_timestamp()-interval '1 second' where id=$1",[n.id]);
+  await expect(allowed(n)).rejects.toThrow('Delivery lease expired');
+  await change("update team_notifications set lease_until=clock_timestamp()+interval '3 minutes',source='hub' where id=$1",[n.id]);
+  expect(await allowed(n)).toBe(false);
+  await change("update team_notifications set source='finance',channel='in_app' where id=$1",[n.id]);
+  expect(await allowed(n)).toBe(false);
+  await change("update team_notifications set channel='email',status='pending' where id=$1",[n.id]);
+  expect(await allowed(n)).toBe(false);
+ });
+ for(const [who,position] of [['finance','finance_lead'],['po','lead_coach_1'],['coach2','lead_coach_2']] as const){
+  test(`${position} revocation denies audience even when same-area lead can still view PO`,async()=>{
+   const id=await submitted(),n=await claimDelivery(id,'approval_needed',ids[who]);
+   expect(await allowed(n)).toBe(true);
+   await change("update profiles set role='lead' where id=$1",[ids[who]]);
+   await revoke(who,position);
+   await as(who);expect((await db.query<any>('select finance_private.visible($1) visible',[id])).rows[0].visible).toBe(true);
+   expect(await allowed(n)).toBe(false);
+  });
+ }
+ test('inactive position catalog and deactivated or readonly profile fail closed',async()=>{
+  const id=await submitted(),n=await claimDelivery(id,'approval_needed',ids.finance);
+  await change("update team_positions set active=false where key='finance_lead'");expect(await allowed(n)).toBe(false);
+  await change("update team_positions set active=true where key='finance_lead'");expect(await allowed(n)).toBe(true);
+  await change('update profiles set active=false where id=$1',[ids.finance]);expect(await allowed(n)).toBe(false);
+  await change("update profiles set active=true,role='readonly' where id=$1",[ids.finance]);expect(await allowed(n)).toBe(false);
+ });
+ test('loss of current PO visibility blocks a historical approver, including null area',async()=>{
+  const id=await fullApproved();await act('submitter',id,'school_submit',{reference:'Synthetic receipt'});
+  const n=await claimDelivery(id,'submitted_to_school',ids.finance);expect(await allowed(n)).toBe(true);
+  await revoke('finance','finance_lead');expect(await allowed(n)).toBe(false);
+  await change("update profiles set role='lead',primary_area_id=null where id=$1",[ids.finance]);expect(await allowed(n)).toBe(false);
+  await change("update profiles set role='lead',primary_area_id=$2 where id=$1",[ids.finance,area]);expect(await allowed(n)).toBe(true);
+ });
+ test('draft PO visibility is checked independently of the original event audience',async()=>{
+  const id=await submitted(),n=await claimDelivery(id,'approval_needed',ids.finance);
+  await change("update finance_purchase_orders set status='draft' where id=$1",[id]);expect(await allowed(n)).toBe(false);
+ });
+ test('revoked school-submit capability denies delivery despite separate finance-admin visibility',async()=>{
+  const id=await fullApproved(),n=await claimDelivery(id,'ready_for_school',ids.submitter);
+  expect(await allowed(n)).toBe(true);
+  await as('admin');await call('assignment',{user_id:ids.submitter,capability:'finance_admin',active:true,reason:'Synthetic visibility'});
+  await call('assignment',{user_id:ids.submitter,capability:'school_submitter',active:false,reason:'Revoke queued recipient'});
+  await as('submitter');expect((await db.query<any>('select finance_private.visible($1) visible',[id])).rows[0].visible).toBe(true);
+  expect(await allowed(n)).toBe(false);
+ });
+ test('school fallback respects current explicit assignees and current five-person cap',async()=>{
+  await change("update finance_assignments set active=false where capability='school_submitter'");
+  const id=await fullApproved(),n=await claimDelivery(id,'ready_for_school',ids.mentor);expect(await allowed(n)).toBe(true);
+  await change("update finance_assignments set active=true where capability='school_submitter'");expect(await allowed(n)).toBe(false);
+  await change("update finance_assignments set active=false where capability='school_submitter'");
+  for(let i=301;i<=304;i++)await change("insert into profiles(id,role,active) values($1,'mentor',true)",[uid(i)]);
+  expect(await allowed(n)).toBe(false);
+  const requester=await claimDelivery(id,'ready_for_school',ids.student);expect(await allowed(requester)).toBe(true);
+ });
+ test('remaining approvers and requester coverage are preserved for new and legacy events',async()=>{
+  const id=await submitted();await act('po',id,'approve',{slot:'po_approver'});
+  let n=await claimDelivery(id,'approval_recorded',ids.student);expect(await allowed(n)).toBe(true);
+  n=await claimDelivery(id,'approval_recorded',ids.finance);expect(await allowed(n)).toBe(true);
+  await change("update team_notifications set event='approval_remaining' where id=$1",[n.id]);expect(await allowed(n)).toBe(true);
+  await act('finance',id,'approve',{slot:'finance_approver'});expect(await allowed(n)).toBe(false);
+  n=await claimDelivery(id,'ready_for_school',ids.student);expect(await allowed(n)).toBe(true);
+  await act('submitter',id,'school_submit',{reference:'Synthetic receipt'});
+  for(const recipient of [ids.student,ids.finance,ids.po])expect(await allowed(await claimDelivery(id,'submitted_to_school',recipient))).toBe(true);
+ });
+ test('change and cancellation audiences preserve requester and historical approvers with live visibility',async()=>{
+  const id=await submitted();await act('po',id,'request_changes',{slot:'po_approver',reason:'Synthetic change'});
+  expect(await allowed(await claimDelivery(id,'changes_requested',ids.student))).toBe(true);
+  await act('admin',id,'cancel',{reason:'Synthetic cancellation'});
+  for(const recipient of [ids.student,ids.finance,ids.po,ids.coach2])expect(await allowed(await claimDelivery(id,'cancelled',recipient))).toBe(true);
+  const n=await claimDelivery(id,'cancelled',ids.po);await revoke('po','lead_coach_1');expect(await allowed(n)).toBe(false);
+  await change("update profiles set role='mentor' where id=$1",[ids.po]);expect(await allowed(n)).toBe(true);
+ });
+ test('authorization ignores forged payload and rejects mismatched or unknown events',async()=>{
+  const id=await submitted(),n=await claimDelivery(id,'approval_needed',ids.finance);
+  await change("update team_notifications set payload='{}'::jsonb where id=$1",[n.id]);expect(await allowed(n)).toBe(true);
+  await revoke('finance','finance_lead');
+  await change("update team_notifications set payload=jsonb_build_object('recipient_id',$2::text,'requester_id',$2::text,'slot','finance_approver') where id=$1",[n.id,ids.finance]);
+  expect(await allowed(n)).toBe(false);
+  await change("update team_notifications set event='unknown_event' where id=$1",[n.id]);expect(await allowed(n)).toBe(false);
+  await change("update team_notifications set event='changes_requested',recipient_id=$2 where id=$1",[n.id,ids.student]);expect(await allowed(n)).toBe(false);
+  const other=await submitted();await change('update team_notifications set entity_id=$2 where id=$1',[n.id,other]);expect(await allowed(n)).toBe(false);
+ });
+ test('shared Team Hub claim remains unchanged and does not claim non-email channels',async()=>{
+  const sql=readFileSync('tests/fixtures/teamhub_notification_claim.sql','utf8');
+  expect(readFileSync('supabase/migrations/20261018051306_finance_notification_delivery_authorization.sql','utf8')).not.toMatch(/create (or replace )?function public\.team_notification_(claim|prepare|finish)/i);
+  const definition=(await change("select pg_get_functiondef('public.team_notification_claim(integer)'::regprocedure) definition")).rows[0].definition;
+  const body=sql.split('as $$')[1].split('$$;')[0];expect(definition).toContain(body);
+  const id=await submitted();await change("update team_notifications set channel='in_app' where entity_id=$1",[id]);
+  await db.exec('set role service_role');expect((await db.query('select * from team_notification_claim(3)')).rows).toHaveLength(0);
+ });
+ for(const revokeDuring of ['prepare','retry','lease_expiry'] as const)test(`real worker and database block unsafe delivery during ${revokeDuring}`,async()=>{
+  const id=await submitted();let n=await claimDelivery(id,'approval_needed',ids.finance);
+  let queued=true,sends=0;
+  const service=async(sql:string,args:unknown[])=>{await db.exec('reset role;set role service_role');return rpc(sql,args);};
+  const store:Store={
+   claim:async()=>queued?(queued=false,[n]):[],
+   account:async()=>({active:true,email:'fixture@example.invalid',email_confirmed_at:'2026-01-01'}),
+   prepare:async(n,email)=>{
+    const prepared=(await service('select team_notification_prepare($1,$2,$3) request',[n.id,n.lease_token,email])).rows[0].request;
+    if(revokeDuring==='prepare')await revoke('finance','finance_lead');
+    if(revokeDuring==='lease_expiry')await change("update team_notifications set lease_until=clock_timestamp()-interval '1 second' where id=$1",[n.id]);
+    return prepared;
+   },
+   allowed:n=>deliveryAllowed(async(path,body:any)=>{
+    expect(path).toBe('/rest/v1/rpc/finance_notification_delivery_allowed');
+    return (await service('select finance_notification_delivery_allowed($1,$2) allowed',[body.notification_id,body.token])).rows[0].allowed;
+   },n),
+   finish:async(n,r)=>{await service('select team_notification_finish($1,$2,$3,$4,null)',[n.id,n.lease_token,r.outcome,r.error_code||null]);},
+  };
+  await processBatch(store,'sender',async()=>{sends++;return {outcome:'retry'};});
+  if(revokeDuring==='retry'){
+   await revoke('finance','finance_lead');n=await claimDelivery(id,'approval_needed',ids.finance);queued=true;
+   expect(n.provider_request).not.toBeNull();
+   await processBatch(store,'sender',async()=>{sends++;return {outcome:'sent'};});
+  }
+  expect(sends).toBe(revokeDuring==='retry'?1:0);
+  const result=(await notices(id)).find(x=>x.id===n.id);
+  expect(result.status).toBe(revokeDuring==='lease_expiry'?'pending':'skipped');
+  expect(result.last_error).toBe(revokeDuring==='lease_expiry'?'eligibility_exception':'recipient_no_longer_eligible');
+ });
 });

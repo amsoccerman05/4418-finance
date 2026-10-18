@@ -3,7 +3,7 @@ import {render,type Notification,type Email} from '../supabase/functions/finance
 import {sendEmail} from '../supabase/functions/finance-notifications/provider';
 import {handle,processBatch,type Store} from '../supabase/functions/finance-notifications/worker';
 const n:Notification={id:'notification-id',entity_id:'00000000-0000-0000-0000-000000000001',recipient_id:'student',lease_token:'lease',event:'changes_requested',provider_request:null,payload:{po_number:27,vendor:'<img src=x onerror="alert(1)">',amount:123.5,requester:'A & B',area:'Build',revision:2,purpose:'<script>bad</script>',actor:'Coach',explanation:'"fix" <b>this</b>'}};
-function store(){let queued=true;const outcomes:any[]=[];let frozen:Email|null=null;const s:Store={claim:async()=>queued?(queued=false,[{...n,provider_request:frozen}]):[],account:async()=>({active:true,email:'test@example.invalid',email_confirmed_at:'2026-01-01'}),prepare:async(_n,e)=>frozen|| (frozen=e),finish:async(_n,r)=>{outcomes.push(r);if(r.outcome==='retry')queued=true;}};return {s,outcomes,requeue:()=>{queued=true;}};}
+function store(){let queued=true;const outcomes:any[]=[];let frozen:Email|null=null;const s:Store={claim:async()=>queued?(queued=false,[{...n,provider_request:frozen}]):[],account:async()=>({active:true,email:'test@example.invalid',email_confirmed_at:'2026-01-01'}),prepare:async(_n,e)=>frozen|| (frozen=e),allowed:async()=>true,finish:async(_n,r)=>{outcomes.push(r);if(r.outcome==='retry')queued=true;}};return {s,outcomes,requeue:()=>{queued=true;}};}
 test('email escapes user-controlled HTML and uses a token-free Finance deep link',()=>{const e=render(n,'test@example.invalid','4418 IMPULSE <notifications@frc4418.org>');expect(e.html).not.toContain('<script>');expect(e.html).not.toContain('<img');expect(e.html).toContain('&lt;script&gt;');expect(e.html).toContain('A &amp; B');expect(e.html).toContain('#po/00000000-0000-0000-0000-000000000001');expect(e.text).toContain('Revision: 2');expect(e.html).not.toContain('access_token');});
 test('worker rejects browser invocations before touching database or provider',async()=>{const {s}=store();s.claim=async()=>{throw Error('must not call')};expect((await handle(new Request('https://worker',{method:'POST'}),{secret:'x'.repeat(40),from:'sender',resendKey:'key'},s)).status).toBe(401);});
 test('parallel invocations claim once and send once',async()=>{const {s}=store();let count=0;const deliver=async()=>{count++;return {outcome:'sent' as const,provider_message_id:'sent'};};await Promise.all([processBatch(s,'sender',deliver),processBatch(s,'sender',deliver)]);expect(count).toBe(1);});
@@ -54,4 +54,58 @@ test('new Finance actions use concise branded messages with actor, reason and PO
  const email=render({...n,event,payload:{...n.payload,actor:'Coach',explanation:'Different parts',slot:'po_approver'}},'test@example.invalid','sender');expect(email.subject).toContain(title);expect(email.text).toContain('Coach');expect(email.text).toContain('#po/');if(event==='cancelled')expect(email.text).toContain('Different parts');
  }
  expect(render({...n,event:'approval_needed',payload:{...n.payload,resubmitted:true}},'test@example.invalid','sender').subject).toContain('resubmitted');
+});
+
+test('eligibility is checked after prepare immediately before every delivery',async()=>{
+ const {s,outcomes}=store();const order:string[]=[];let allowed=true;
+ s.account=async()=>{order.push('account');return {active:true,email:'test@example.invalid',email_confirmed_at:'now'};};
+ s.prepare=async(_n,email)=>{order.push('prepare');allowed=false;return email;};
+ s.allowed=async()=>{order.push('eligibility');return allowed;};
+ await processBatch(s,'sender',async()=>{order.push('delivery');return {outcome:'sent'};});
+ expect(order).toEqual(['account','prepare','eligibility']);
+ expect(outcomes).toEqual([{outcome:'skipped',error_code:'recipient_no_longer_eligible'}]);
+});
+test('revoked Finance audience suppresses a frozen provider retry',async()=>{
+ const {s,outcomes}=store();let allowed=true,checks=0,sends=0;
+ s.allowed=async notification=>{checks++;if(checks===2)expect(notification.provider_request).not.toBeNull();return allowed;};
+ await processBatch(s,'sender',async()=>{sends++;return {outcome:'retry'};});
+ allowed=false;
+ await processBatch(s,'sender',async()=>{sends++;return {outcome:'sent'};});
+ expect(checks).toBe(2);expect(sends).toBe(1);
+ expect(outcomes.map(x=>x.outcome)).toEqual(['retry','skipped']);
+});
+for(const result of [false,null,undefined,'true',1,{allowed:true}])test(`eligibility requires boolean true: ${JSON.stringify(result)}`,async()=>{
+ const {s,outcomes}=store();s.allowed=async()=>result as any;
+ let sends=0;await processBatch(s,'sender',async()=>{sends++;return {outcome:'sent'};});
+ expect(sends).toBe(0);expect(outcomes[0].outcome).toBe('skipped');
+});
+test('unavailable delivery eligibility fails closed and can retry safely',async()=>{
+ const {s,outcomes}=store();s.allowed=async()=>{throw Error('eligibility_http_503');};
+ let sends=0;const deliver=async()=>{sends++;return {outcome:'sent' as const};};
+ expect(await processBatch(s,'sender',deliver)).toEqual({processed:0,errors:1});
+ expect(sends).toBe(0);expect(outcomes).toEqual([{outcome:'retry',error_code:'eligibility_eligibility_http_503'}]);
+ s.allowed=async()=>true;await processBatch(s,'sender',deliver);
+ expect(sends).toBe(1);expect(outcomes.map(x=>x.outcome)).toEqual(['retry','sent']);
+});
+test('delivery eligibility binds Finance to its lease and keeps the Hub RPC contract',async()=>{
+ const {deliveryAllowed}=await import('../supabase/functions/finance-notifications/account');
+ const calls:any[]=[];const api=async(path:string,body?:unknown)=>{calls.push({path,body});return true;};
+ for(const source of [undefined,'finance','hub'])expect(await deliveryAllowed(api,{...n,source})).toBe(true);
+ expect(calls).toEqual([
+  {path:'/rest/v1/rpc/finance_notification_delivery_allowed',body:{notification_id:n.id,token:n.lease_token}},
+  {path:'/rest/v1/rpc/finance_notification_delivery_allowed',body:{notification_id:n.id,token:n.lease_token}},
+  {path:'/rest/v1/rpc/team_announcement_delivery_allowed',body:{notification_id:n.id}},
+ ]);
+ expect(await deliveryAllowed(api,{...n,source:'unknown'})).toBe(false);expect(calls).toHaveLength(3);
+ await expect(deliveryAllowed(async()=>{throw Error('RPC unavailable')},n)).rejects.toThrow('RPC unavailable');
+});
+test('Hub audience is rechecked after preparation as well as account resolution',async()=>{
+ const {resolveAccount,deliveryAllowed}=await import('../supabase/functions/finance-notifications/account');
+ const {s,outcomes}=store();const claim=s.claim;s.claim=async()=>(await claim()).map(x=>({...x,source:'hub',entity_id:null,payload:{title:'Test',body:'Body'}}));
+ let allowed=true,checks=0,sends=0;
+ const api=async(path:string)=>{if(path.startsWith('/auth/'))return {email:'test@example.invalid',email_confirmed_at:'now'};if(path.includes('delivery_allowed')){checks++;return allowed;}throw Error('Unexpected API');};
+ s.account=(id,n)=>resolveAccount(api,id,n);s.allowed=n=>deliveryAllowed(api,n);
+ const prepare=s.prepare;s.prepare=async(n,e)=>{allowed=false;return prepare(n,e);};
+ await processBatch(s,'sender',async()=>{sends++;return {outcome:'sent'};});
+ expect(checks).toBe(2);expect(sends).toBe(0);expect(outcomes[0].outcome).toBe('skipped');
 });
