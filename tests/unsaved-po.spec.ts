@@ -182,13 +182,16 @@ test('Sheet opens separately; same-document Back/Forward retain the editor and n
   await page.goForward();
   await expect(page).toHaveURL(/#dashboard$/);
   await expect(editor(page).getByLabel('Vendor', { exact: true })).toHaveValue('Unfinished supplier');
+  const documentStarted = await page.evaluate(() => performance.timeOrigin);
   const warningPromise = page.waitForEvent('dialog');
-  const reloading = page.reload().catch(() => null);
+  // A dismissed beforeunload intentionally never commits a navigation. Do not
+  // await page.reload(), which waits for that nonexistent load until timeout.
+  await page.evaluate(() => { setTimeout(() => location.reload(), 0); });
   const warning = await warningPromise;
   expect(warning.type()).toBe('beforeunload');
   await warning.dismiss();
-  await reloading;
   await expect(editor(page).getByLabel('Vendor', { exact: true })).toHaveValue('Unfinished supplier');
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStarted);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['4418-finance-auth']);
   expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
   expect(calls).toEqual([]);
