@@ -189,7 +189,8 @@ textarea:focus {
   background: var(--suite-warning-bg);
   color: var(--suite-warning);
 }
-.badge.approved {
+.badge.approved,
+.badge.received {
   background: var(--suite-success-bg);
   color: var(--suite-success);
 }

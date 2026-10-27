@@ -94,6 +94,8 @@ ${Object.entries(ids)
   await db.exec(readFileSync("tests/fixtures/team_management_positions.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/202609200001_finance_budget_core.sql", "utf8"));
   await db.exec(readFileSync("supabase/migrations/20261007011342_allow_all_active_student_purchase_requests.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/202609200002_finance_workbook.sql", "utf8"));
+  await db.exec(readFileSync("supabase/migrations/20261027204114_finance_po_received.sql", "utf8"));
   await as("admin");
   for (const [who,position_key] of [["finance","finance_lead"],["po","lead_coach_1"],["coach2","lead_coach_2"]] as const) {
     await db.query("select public.team_manage('assign_position',$1::jsonb)",[JSON.stringify({user_id:ids[who],position_key,reason:"Season assignment"})]);

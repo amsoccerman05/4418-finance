@@ -6,6 +6,10 @@ Purchase-order approval and school-submission tracking. The school's Google Shee
 
 The additive `20261007011342_allow_all_active_student_purchase_requests.sql` migration permits every active student profile to create and submit its own PO, including students with no attendance registration record. It preserves the existing Finance Lead and Lead Coach approval workflow and all other permissions. The deployed frontend already uses the server's eligibility decision, so this fix does not require a frontend deployment. Review [the exact access change and release checks](docs/STUDENT-REQUEST-ACCESS.md) before applying it.
 
+## Received purchase orders
+
+The proposed `20261027204114_finance_po_received.sql` migration adds **Received** after school submission, with an audited receiver, timestamp and optional note. The Purchase orders page keeps received orders in a separate searchable table. Receiving uses the existing school-submission authority and does not change approvals, budget spending or Inventory stock. Review [the receiving workflow and release gates](docs/PO-RECEIVING.md) before applying the migration or publishing the frontend.
+
 ## Local setup
 
 1. `npm ci`
