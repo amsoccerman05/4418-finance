@@ -100,6 +100,8 @@
 .finance-empty p { max-width: 52ch; margin: auto; color: var(--suite-muted); }
 .finance-empty > a { margin-top: 18px; }
 .stats { gap: 16px; margin: 0 0 28px; }
+.po-stats { grid-template-columns: repeat(5,minmax(0,1fr)); }
+.received-orders { margin-top: 32px; }
 .stat { margin: 0; padding: 18px; min-height: 126px; }
 .stat-heading { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; color: var(--suite-muted); font-size: 12px; font-weight: 600; line-height: 1.5; min-height: 36px; }
 .stat-heading svg { color: var(--suite-primary); }
@@ -143,6 +145,7 @@ dialog .form .muted { padding: 12px 14px; background: var(--suite-secondary); bo
 @media (min-width: 1200px) { .filters { grid-template-columns: repeat(5,minmax(0,1fr)); } }
 @media (min-width: 761px) { .finance-nav { padding-top: 30px; }.finance-layout main { padding: 32px; } }
 @media (max-width: 1100px) {
+  .po-stats { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .finance-page-heading { align-items: flex-start; flex-wrap: wrap; }
   .workspace-links { gap: 8px; }
   .workspace-links a { font-size: 12px; padding: 12px; }
@@ -153,6 +156,8 @@ dialog .form .muted { padding: 12px 14px; background: var(--suite-secondary); bo
   .funding-caption span { margin-left: 0; }
 }
 @media (max-width: 1050px) {
+  /* Keep column headings in the accessibility tree while rows become cards. */
+  .received-po-table thead { display: table-header-group; position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   .finance-table { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
   .finance-table tr { border-color: var(--suite-border); padding: 14px; box-shadow: var(--suite-shadow); }
   .finance-table td { padding: 9px; }

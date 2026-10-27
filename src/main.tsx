@@ -416,11 +416,12 @@ function Overview({
       d.orders.filter((p) => p.status === "submitted_to_school").length,
       "submitted",
     ],
+    ["Received", d.orders.filter((p) => p.status === "received").length, "received"],
   ];
   const activeFilterCount = [search, status, area, vendor, requester, approval].filter(Boolean).length;
   const secondaryFilterCount = [area, vendor, requester].filter(Boolean).length;
   const clearFilters = () => { setSearch(""); setStatus(""); setArea(""); setVendor(""); setRequester(""); setApproval(""); };
-  const queue = d.orders
+  const filtered = d.orders
     .filter(
       (p) =>
         (!status || p.status === status) &&
@@ -436,6 +437,8 @@ function Overview({
                 ? p.status === "approved"
                 : approval === "submitted"
                   ? p.status === "submitted_to_school"
+                  : approval === "received"
+                    ? p.status === "received"
                   : p.status === "awaiting_approval" &&
                     !approved(d, p, approval))) &&
         `${p.vendor} ${p.purpose} ${who(p.requester_id)} ${p.school_reference}`
@@ -453,10 +456,13 @@ function Overview({
               : 3;
       return rank(a) - rank(b) || b.po_number - a.po_number;
     });
+  const queue = filtered.filter(p => p.status !== "received");
+  const received = filtered.filter(p => p.status === "received")
+    .sort((a, b) => (b.received_at || "").localeCompare(a.received_at || "") || b.po_number - a.po_number);
   return (
     <>
       {privileged && (
-        <div className="stats">
+        <div className="stats po-stats">
           {counts.map(([name, count, value]) => (
             <button
               key={name}
@@ -492,7 +498,7 @@ function Overview({
         </label>
         <label>
           Status
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             {[
               "draft",
@@ -500,6 +506,7 @@ function Overview({
               "changes_requested",
               "approved",
               "submitted_to_school",
+              "received",
               "cancelled",
             ].map((s) => (
               <option key={s} value={s}>
@@ -511,6 +518,7 @@ function Overview({
         <label>
           Approval state
           <select
+            aria-label="Approval state"
             value={approval}
             onChange={(e) => setApproval(e.target.value)}
           >
@@ -519,6 +527,7 @@ function Overview({
             <option value="waiting">Waiting on other approval</option>
             <option value="ready">Ready for school</option>
             <option value="submitted">Submitted</option>
+            <option value="received">Received</option>
             <option value="finance_approver">Finance Lead pending</option>
             <option value="po_approver">Lead Coach pending</option>
           </select>
@@ -597,6 +606,27 @@ function Overview({
           ))}
         </div>
       )}
+      <section className="received-orders" aria-labelledby="received-orders-heading">
+        <div className="finance-queue-heading">
+          <h2 id="received-orders-heading">Received purchase orders</h2>
+          <span className="finance-result-count">{received.length} {received.length === 1 ? "order" : "orders"}</span>
+        </div>
+        <p className="muted">Completed deliveries, separate from the approval queue. The filters above apply to both lists.</p>
+        {received.length ? (
+          <table className="finance-table received-po-table" role="table" aria-label="Received purchase orders">
+            <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Purchase order</th><th role="columnheader" scope="col">Requester / area</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">School reference</th><th role="columnheader" scope="col">Received</th></tr></thead>
+            <tbody role="rowgroup">{received.map(p => (
+              <tr role="row" key={p.id}>
+                <td role="cell" data-label="Purchase order"><button onClick={() => onOpen(p.id)}>PO {p.po_number} · {p.vendor}</button><small>{p.purpose}</small></td>
+                <td role="cell" data-label="Requester / area">{who(p.requester_id)}<small>{d.context.areas.find(a => a.id === p.area_id)?.name}</small></td>
+                <td role="cell" data-label="Amount">{money(p.amount)}</td>
+                <td role="cell" data-label="School reference">{p.school_reference || "Not provided"}</td>
+                <td role="cell" data-label="Received">{when(p.received_at)}<small>{p.received_by ? who(p.received_by) : "Team member"}</small></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        ) : <div className="panel empty">{activeFilterCount ? "No received purchase orders match these filters." : "No purchase orders have been marked received yet."}</div>}
+      </section>
     </>
   );
 }
@@ -729,7 +759,7 @@ function Detail({
     d.context.people.find((n) => n.id === id)?.name || "Team member";
   const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
   const owner = p.requester_id === d.context.profile.id || d.context.is_admin;
-  const locked = ["cancelled", "submitted_to_school"].includes(p.status);
+  const locked = ["cancelled", "submitted_to_school", "received"].includes(p.status);
   return (
     <>
       <div className="detail-heading">
@@ -908,9 +938,9 @@ function Detail({
       </div>
       <section className="panel">
         <h2>School Submission</h2>
-        {p.status === "submitted_to_school" ? (
+        {["submitted_to_school", "received"].includes(p.status) ? (
           <>
-            <Badge status={p.status} />
+            <Badge status="submitted_to_school" />
             <p>
               {name(p.school_submitted_by)} · {when(p.school_submitted_at)}
             </p>
@@ -957,6 +987,23 @@ function Detail({
           </p>
         )}
       </section>
+      {["submitted_to_school", "received"].includes(p.status) && <section className="panel">
+        <h2>Receiving</h2>
+        {p.status === "received" ? <>
+          <Badge status="received" />
+          <p>{name(p.received_by)} · {when(p.received_at)}</p>
+          {p.receipt_note && <p>{p.receipt_note}</p>}
+        </> : canOverride || d.context.capabilities.includes("school_submitter") ? (
+          <form className="form" onSubmit={e => {
+            const f = fields(e);
+            void run(() => mutate("receive", { id: p.id, version: p.version, note: f.note }), "Marked received");
+          }}>
+            <p>Confirm the entire order has arrived. This records receipt of the PO; it does not change Inventory stock or record another expense.</p>
+            <label>Receipt note (optional)<textarea name="note" maxLength={2000} /></label>
+            <button className="primary">Mark received</button>
+          </form>
+        ) : <p>Waiting for a designated school submitter or mentor/admin to confirm receipt.</p>}
+      </section>}
       <section className="panel">
         <h2>Activity History</h2>
         {d.history

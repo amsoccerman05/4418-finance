@@ -26,6 +26,9 @@ export type PO = {
   school_note: string;
   school_submitted_by: string | null;
   school_submitted_at: string | null;
+  received_by: string | null;
+  received_at: string | null;
+  receipt_note: string;
   created_at: string;
 };
 export type Approval = {
@@ -78,7 +81,7 @@ export type Data = {
   assignments: Assignment[];
 };
 export const label = (s: string) =>
-  ({ finance_approver: "Finance Lead", po_approver: "Lead Coach" } as Record<string,string>)[s] || s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  ({ finance_approver: "Finance Lead", po_approver: "Lead Coach", receive: "Received" } as Record<string,string>)[s] || s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 export const money = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     n,

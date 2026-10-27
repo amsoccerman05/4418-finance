@@ -24,6 +24,7 @@ export function activityText(h: Budget['history'][number], budget: Budget) {
  switch(h.action){
  case 'approve':return `${prefix} approved`;
  case 'school_submit':return `${prefix} submitted to school`;
+ case 'receive':return `${prefix} received`;
  case 'submit':return `${prefix} submitted for review`;
  case 'cancel':return `${prefix} canceled`;
  case 'request_changes':return `${prefix} needs changes`;
