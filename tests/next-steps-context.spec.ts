@@ -51,6 +51,7 @@ for (const width of [390, 1440]) {
     expect(position).toBeGreaterThan(300);
     await result(page, 12).click();
     await expect(dialog(page).locator('.po-next-step')).toContainText('Finish and submit this request');
+    await dialog(page).screenshot({ path: `test-results/finance-next-step-draft-${width}.png` });
     await dialog(page).getByRole('button', { name: 'Review draft actions', exact: true }).click();
     await expect(dialog(page).locator('#owner-actions')).toBeFocused();
     await dialog(page).getByRole('button', { name: '← Back to results', exact: true }).click();
@@ -140,8 +141,9 @@ test('all PO states have a truthful summary beside navigation to their existing 
   ];
   for (const [status, title, action, target] of states) {
     orders[0].status = status;
-    await page.goto(`/#po/${orders[0].id}`);
+    await page.goto(`/?fixture-state=${status}#po/${orders[0].id}`);
     await expect(dialog(page).locator('.po-next-step')).toContainText(title);
+    await dialog(page).screenshot({ path: `test-results/finance-next-step-summary-${status}.png` });
     if (action) {
       await dialog(page).getByRole('button', { name: action, exact: true }).click();
       await expect(dialog(page).locator(`#${target}`)).toBeFocused();
