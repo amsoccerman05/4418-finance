@@ -143,6 +143,9 @@ test('all PO states have a truthful summary beside navigation to their existing 
     orders[0].status = status;
     await page.goto(`/?fixture-state=${status}#po/${orders[0].id}`);
     await expect(dialog(page).locator('.po-next-step')).toContainText(title);
+    if (status === 'draft') await expect(dialog(page).getByText('Not Submitted', { exact: true })).toHaveCount(2);
+    if (status === 'cancelled') await expect(dialog(page).getByText('Not Required', { exact: true })).toHaveCount(2);
+    if (status === 'changes_requested') await expect(dialog(page).getByText('Awaiting Resubmission', { exact: true })).toHaveCount(2);
     await dialog(page).screenshot({ path: `test-results/finance-next-step-summary-${status}.png` });
     if (action) {
       await dialog(page).getByRole('button', { name: action, exact: true }).click();

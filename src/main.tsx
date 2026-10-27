@@ -1045,7 +1045,7 @@ function Detail({
                   ? "Finance Lead Approval"
                   : "Lead Coach Approval"}
               </h2>
-              <Badge status={latest?.action || "pending"} />
+              <Badge status={latest?.action || (p.status === "draft" ? "not_submitted" : p.status === "cancelled" ? "not_required" : p.status === "changes_requested" ? "awaiting_resubmission" : "pending")} />
               {!latest && <p>{p.status === 'draft' ? 'Submit this draft to request approval.' : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
               {latest && (
                 <>
