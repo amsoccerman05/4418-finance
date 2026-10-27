@@ -498,7 +498,7 @@ function Overview({
         </label>
         <label>
           Status
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             {[
               "draft",
@@ -518,6 +518,7 @@ function Overview({
         <label>
           Approval state
           <select
+            aria-label="Approval state"
             value={approval}
             onChange={(e) => setApproval(e.target.value)}
           >
