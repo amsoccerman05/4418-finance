@@ -225,6 +225,15 @@ dialog .form .muted { padding: 12px 14px; background: var(--suite-secondary); bo
 }
 
 /* Clear everyday actions, compact filters and visible save feedback. */
+.po-draft-help { padding: 12px 14px; border-radius: var(--radius-card); background: var(--suite-info-bg); font-size: 13px; }
+.po-sheet-shortcut { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+.po-sheet-shortcut a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
+.po-sheet-shortcut small { color: var(--suite-muted); }
+.po-draft-actions { position: sticky; bottom: -20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 0; border-top: 1px solid var(--suite-border); background: var(--suite-background); }
+.po-draft-actions [role=status] { font-size: 13px; color: var(--suite-muted); }
+dialog.po-leave-dialog { width: min(540px, calc(100vw - 32px)); }
+.po-leave-dialog > p + p { margin-top: 12px; }
+.po-leave-actions { margin-bottom: 0; }
 .finance-nav .finance-home { margin-top: 12px; border-top: 1px solid var(--suite-border); border-radius: 0 0 var(--radius-button) var(--radius-button); }
 .finance-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 20px; }
 .order-filters { grid-template-columns: minmax(0,2fr) repeat(2,minmax(0,1fr)); }

@@ -10,6 +10,10 @@ The additive `20261007011342_allow_all_active_student_purchase_requests.sql` mig
 
 The proposed `20261027204114_finance_po_received.sql` migration adds **Received** after school submission, with an audited receiver, timestamp and optional note. The Purchase orders page keeps received orders in a separate searchable table. Receiving uses the existing school-submission authority and does not change approvals, budget spending or Inventory stock. Review [the receiving workflow and release gates](docs/PO-RECEIVING.md) before applying the migration or publishing the frontend.
 
+## Unfinished purchase orders
+
+Edited PO forms ask before closing, offer an explicit Save draft action, and open the Google Sheet separately. Saved drafts can be resumed from Purchase orders. No form data is automatically persisted and no approval is submitted automatically. See [behavior, privacy limits and verification](docs/UNSAVED-PO-FORMS.md).
+
 ## Local setup
 
 1. `npm ci`
