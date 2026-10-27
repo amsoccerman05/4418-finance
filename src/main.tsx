@@ -5,6 +5,7 @@ import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspac
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
+import { createPOEditorGuard, preservesPOEditor, poFormSnapshot } from './po-editor-guard';
 import {
   StrictMode,
   useEffect,
@@ -12,6 +13,7 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -65,6 +67,20 @@ function App() {
     [editing, setEditing] = useState<PO | "new" | null>(null),
     [admin, setAdmin] = useState(false),
     [recovery, setRecovery] = useState(false);
+  const [, updateEditorGuard] = useState(0);
+  const [editorGuard] = useState(() => createPOEditorGuard(() => updateEditorGuard(n => n + 1)));
+  const poForm = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!editorGuard.dirty) return;
+    window.addEventListener('beforeunload', editorGuard.beforeUnload);
+    return () => window.removeEventListener('beforeunload', editorGuard.beforeUnload);
+  }, [editorGuard, editorGuard.dirty]);
+  const closeDialog = () => {
+    editorGuard.reset();
+    setSelected(null);
+    setEditing(null);
+    setAdmin(false);
+  };
   const linkedPO = useRef(/^#po\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] || null);
   useEffect(() => {
     if (!data) return;
@@ -84,13 +100,20 @@ function App() {
   useEffect(() => {
     if (!client) return;
     let mounted = true;
+    let sessionUserId: string | null = null;
     const receive = (event: string, session: unknown) => {
+      const nextId = (session as { user?: { id?: string } } | null)?.user?.id || null;
+      // Returning from the Google Sheet may refresh the same user's session.
+      // It must not unmount their editor. Account changes/recovery still reset it.
+      if (editorGuard.dirty && preservesPOEditor(event, sessionUserId, nextId)) return;
+      sessionUserId = nextId;
       const gen = ++generation.current;
       setSigned(!!session);
       setData(null);
       setDenied(false);
       setSelected(null);
       setEditing(null);
+      editorGuard.reset();
       setError("");
       setLoading(!!session);
       if (event === "PASSWORD_RECOVERY") setRecovery(true);
@@ -222,12 +245,13 @@ function App() {
     <p><a href="https://team.frc4418.org/">Team Hub / Home</a></p>
   </AuthSurface>;
   const po = data?.orders.find((p) => p.id === selected);
+  const editorGeneration = generation.current;
   return (
     <>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out')}/>
+      <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>editorGuard.requestLeave(()=>{closeDialog();void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out');})}/>
 
       <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
       <main id="main">
@@ -293,22 +317,28 @@ function App() {
                       : `PO ${po?.po_number}`
                 }
                 busy={busy}
-                onClose={() => {
-                  setSelected(null);
-                  setEditing(null);
-                  setAdmin(false);
-                }}
+                onClose={() => editorGuard.requestLeave(closeDialog)}
               >
                 <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />
                 <fieldset disabled={busy} className="unboxed">
                   {editing ? (
                     <POForm
+                      key={editing === "new" ? "new" : `${editing.id}-${editing.version}`}
                       data={data}
                       po={editing === "new" ? undefined : editing}
                       run={run}
+                      formRef={poForm}
+                      dirty={editorGuard.dirty}
+                      onDirty={editorGuard.setDirty}
+                      onSaveFailed={editorGuard.saveFailed}
                       done={(id) => {
+                        // Auth events can arrive before React has unmounted
+                        // the old editor; ignore that account's late response.
+                        if (generation.current !== editorGeneration) return;
+                        const leave = editorGuard.saved();
                         setEditing(null);
-                        setSelected(id);
+                        if (leave) leave();
+                        else setSelected(id);
                       }}
                     />
                   ) : admin ? (
@@ -327,6 +357,24 @@ function App() {
                 </fieldset>
               </Dialog>
             )}
+            {editing && editorGuard.confirming && (
+              <Dialog title="Save your purchase order?" busy={busy} onClose={editorGuard.keepEditing} closeLabel="Keep editing" className="po-leave-dialog">
+                <p>Your changes have not been saved. Save a draft to resume later, or discard only these unsaved edits.</p>
+                <p className="muted">Saving a draft does not submit it for approval. Required fields must be complete.</p>
+                <div className="toolbar po-leave-actions">
+                  <button className="primary" disabled={busy} onClick={() => {
+                    // Close the confirmation before browser validation focuses
+                    // a missing field in the still-mounted underlying form.
+                    editorGuard.beginSaveAndLeave();
+                    requestAnimationFrame(() => {
+                      if (poForm.current?.reportValidity()) poForm.current.requestSubmit();
+                      else editorGuard.saveFailed();
+                    });
+                  }}>Save draft</button>
+                  <button className="danger" disabled={busy} onClick={editorGuard.discard}>Discard changes</button>
+                </div>
+              </Dialog>
+            )}
           </>
         )}
         <footer>
@@ -341,11 +389,15 @@ function Dialog({
   children,
   busy,
   onClose,
+  closeLabel = "Close",
+  className,
 }: {
   title: string;
   children: ReactNode;
   busy: boolean;
   onClose: () => void;
+  closeLabel?: string;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -362,6 +414,7 @@ function Dialog({
   return (
     <dialog
       ref={ref}
+      className={className}
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
@@ -370,8 +423,8 @@ function Dialog({
     >
       <div className="toolbar">
         <h2>{title}</h2>
-        <button className="secondary" disabled={busy} onClick={onClose}>
-          Close
+        <button className="secondary" disabled={busy} onClick={onClose} autoFocus={closeLabel === "Keep editing"}>
+          {closeLabel}
         </button>
       </div>
       {children}
@@ -638,30 +691,63 @@ function POForm({
   po,
   run,
   done,
+  formRef,
+  dirty,
+  onDirty,
+  onSaveFailed,
 }: {
   data: Data;
   po?: PO;
   run: Run;
   done: (id: string) => void;
+  formRef: RefObject<HTMLFormElement | null>;
+  dirty: boolean;
+  onDirty: (dirty: boolean) => void;
+  onSaveFailed: () => void;
 }) {
+  const initial = useRef("");
+  const saving = useRef(false);
+  const mounted = useRef(false);
+  const [sheet, setSheet] = useState(po?.sheet_url || "");
+  useEffect(() => {
+    mounted.current = true;
+    initial.current = poFormSnapshot(formRef.current!);
+    return () => { mounted.current = false; };
+  }, [formRef]);
   return (
     <form
-      className="form"
+      ref={formRef}
+      className="form po-editor"
+      onChange={() => {
+        const form = formRef.current!;
+        onDirty(poFormSnapshot(form) !== initial.current);
+        setSheet((form.elements.namedItem('sheet_url') as HTMLInputElement).value);
+      }}
       onSubmit={(e) => {
         const f = fields(e);
+        if (saving.current) return;
+        saving.current = true;
         void run(async () => {
-          if (!sheetURL(f.sheet_url.trim()))
-            throw new Error(
-              "Use an HTTPS docs.google.com spreadsheet/document link.",
-            );
-          const id = await mutate(po ? "edit" : "create", {
-            ...f,
-            ...(po ? { id: po.id, version: po.version } : {}),
-          });
-          done(id);
+          try {
+            if (!sheetURL(f.sheet_url.trim()))
+              throw new Error(
+                "Use an HTTPS docs.google.com spreadsheet/document link.",
+              );
+            const id = await mutate(po ? "edit" : "create", {
+              ...f,
+              ...(po ? { id: po.id, version: po.version } : {}),
+            });
+            if (mounted.current) done(id);
+          } catch (error) {
+            if (mounted.current) onSaveFailed();
+            throw error;
+          } finally {
+            saving.current = false;
+          }
         }, "Draft saved. Submit it when the Google Sheet is ready.");
       }}
     >
+      <p className="po-draft-help">Save a draft before leaving. Resume it from Purchase orders by opening the draft and choosing <strong>Resume draft</strong>. Nothing is submitted for approval automatically.</p>
       <label>
         Google Sheet URL
         <input
@@ -672,6 +758,7 @@ function POForm({
           required
         />
       </label>
+      {sheetURL(sheet.trim()) && <div className="po-sheet-shortcut"><a href={sheet.trim()} target="_blank" rel="noopener noreferrer">Open Google Sheet in a new tab ↗</a><small>Your Finance form stays open here.</small></div>}
       <div className="grid">
         <label>
           Vendor
@@ -740,7 +827,10 @@ function POForm({
         Keep line items in the Google Sheet. Saving edits returns this PO to
         Saved as a draft. Submitting again requires both approvals.
       </p>
-      <button className="primary">Save draft</button>
+      <div className="po-draft-actions">
+        <span role="status">{dirty ? "Unsaved changes" : "No unsaved changes"}</span>
+        <button className="primary">Save draft</button>
+      </div>
     </form>
   );
 }
@@ -795,7 +885,7 @@ function Detail({
       {owner && !locked && (
         <div className="toolbar">
           <button className="secondary" onClick={edit}>
-            Edit purchase order
+            {p.status === "draft" ? "Resume draft" : "Edit purchase order"}
           </button>
           {["draft", "changes_requested"].includes(p.status) && (
             <button
