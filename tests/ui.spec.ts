@@ -537,6 +537,7 @@ test('Finance Lead sees why their own PO has no approval action',async({page})=>
  const {orders,context,calls}=await mock(page,['finance_approver']);context.profile.role='lead';
  orders.push({id:'po-1',po_number:1,requester_id:reviewer,area_id:'area',vendor:'Own request',amount:125.5,purpose:'Parts',sheet_url:'https://docs.google.com/spreadsheets/d/PO123/edit',status:'awaiting_approval',revision:1,version:2,school_reference:'',notes:''});
  await page.goto('/#orders');await page.getByRole('button',{name:/Own request/}).click();
- await expect(page.getByText('You requested this PO, so you cannot approve it yourself.',{exact:false})).toBeVisible();
+ await expect(page.locator('#approval-finance_approver').getByText('You requested this PO, so you cannot approve it yourself.',{exact:false})).toBeVisible();
+ await expect(page.locator('.po-next-step')).toContainText('A mentor must review your request');
  await expect(page.getByRole('button',{name:'Approve & assign budget'})).toHaveCount(0);expect(calls).toEqual([]);
 });
