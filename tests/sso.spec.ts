@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-test("Finance uses real Hub broker protocol: one login, cross-origin session and logout, no Finance persisted token", async ({
+for (const purchaseShortcut of [false, true]) test(`Finance uses real Hub broker protocol: one login, cross-origin session and logout, no Finance persisted token${purchaseShortcut ? " with purchase shortcut" : ""}`, async ({
   context,
   page,
 }) => {
@@ -65,12 +65,19 @@ test("Finance uses real Hub broker protocol: one login, cross-origin session and
     }
     return route.abort();
   });
-  await page.goto("https://finance.frc4418.org/");
+  await page.goto(`https://finance.frc4418.org/${purchaseShortcut ? "?action=request-purchase" : ""}`);
   await page.getByLabel("Email", { exact: true }).fill("test@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill("fixture-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL("https://finance.frc4418.org/");
-  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(`https://finance.frc4418.org/${purchaseShortcut ? "#orders" : ""}`);
+  await expect(page.getByRole("heading", { name: purchaseShortcut ? "Purchase orders" : "Dashboard", exact: true })).toBeVisible();
+  if (purchaseShortcut) {
+    await expect(page.getByRole('dialog', { name: 'Purchase order details', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Purchase orders', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  }
   await expect(page.getByRole("banner").getByText("Suite Student", { exact: true })).toBeVisible();
   expect(logins).toBe(1);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);

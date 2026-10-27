@@ -329,3 +329,13 @@ a {
     white-space: normal;
   }
 }
+
+/* State-specific guidance links to the existing guarded action, never performs it. */
+.po-next-step { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; margin: 16px 0; border: 1px solid var(--suite-border); border-left: 4px solid var(--suite-primary); border-radius: var(--radius-card); background: var(--suite-info-bg); }
+.po-next-step h2 { margin: 0 0 6px; font-size: 17px; }
+.po-next-step p { margin: 0; }
+.po-next-step button { flex-shrink: 0; }
+.po-next-step-inline { color: var(--suite-muted); font-size: 13px; font-weight: 600; }
+.po-back-results { margin-bottom: 12px; }
+#owner-actions:focus, [id^="approval-"]:focus, #school-submission:focus, #receiving:focus { outline: 2px solid var(--suite-primary); outline-offset: 3px; }
+@media (max-width: 600px) { .po-next-step { align-items: stretch; flex-direction: column; gap: 12px; } }

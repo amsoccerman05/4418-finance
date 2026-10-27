@@ -5,10 +5,13 @@ import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspac
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
+import { poNextStep } from "./po-next-step";
+import { poListContextStore, emptyPOListContext, type POListContext } from "./po-list-context";
 import { createPOEditorGuard, preservesPOEditor, poFormSnapshot } from './po-editor-guard';
 import {
   StrictMode,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -75,12 +78,37 @@ function App() {
     window.addEventListener('beforeunload', editorGuard.beforeUnload);
     return () => window.removeEventListener('beforeunload', editorGuard.beforeUnload);
   }, [editorGuard, editorGuard.dirty]);
+  const returnToResults = () => {
+    closeDialog();
+    if (workspace !== 'orders' || location.hash.startsWith('#po/')) {
+      history.replaceState(history.state, '', `${location.pathname}${location.search}#orders`);
+      setWorkspace('orders');
+    }
+    requestAnimationFrame(() => {
+      if (data) window.scrollTo(0, poListContextStore.read(data.context.profile.id).scrollY);
+    });
+  };
   const closeDialog = () => {
     editorGuard.reset();
     setSelected(null);
     setEditing(null);
     setAdmin(false);
   };
+  const purchaseIntent = useRef(new URLSearchParams(location.search).get('action') === 'request-purchase');
+  useEffect(() => {
+    if (!data || recovery || !purchaseIntent.current) return;
+    // Consume only after authentication and capability loading. Replace, never
+    // push, so Close/Back/refresh cannot replay an already handled request.
+    purchaseIntent.current = false;
+    const url = new URL(location.href);
+    url.searchParams.delete('action');
+    url.hash = 'orders';
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+    setWorkspace('orders');
+    setSelected(null);
+    if (data.context.can_create) setEditing('new');
+    else setMessage('Your account cannot create a purchase request. Contact a mentor for help.');
+  }, [data, recovery]);
   const linkedPO = useRef(/^#po\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] || null);
   useEffect(() => {
     if (!data) return;
@@ -106,6 +134,15 @@ function App() {
       // Returning from the Google Sheet may refresh the same user's session.
       // It must not unmount their editor. Account changes/recovery still reset it.
       if (editorGuard.dirty && preservesPOEditor(event, sessionUserId, nextId)) return;
+      poListContextStore.setUser(nextId);
+      if (event === 'SIGNED_OUT' || (sessionUserId && sessionUserId !== nextId)) {
+        purchaseIntent.current = false;
+        const url = new URL(location.href);
+        if (url.searchParams.get('action') === 'request-purchase') {
+          url.searchParams.delete('action');
+          history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+        }
+      }
       sessionUserId = nextId;
       const gen = ++generation.current;
       setSigned(!!session);
@@ -298,7 +335,7 @@ function App() {
             ) : data ? (
               <>
                 <div className="toolbar"><button className="secondary" disabled={busy} onClick={()=>void run(async()=>{},'Refreshed')}>Refresh</button></div>
-                {workspace==='orders'?<Overview data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} newPO={()=>setEditing("new")} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
+                {workspace==='orders'?<Overview key={data.context.profile.id} data={data} onOpen={setSelected}/>:<fieldset disabled={busy} className="unboxed"><BudgetWorkspace page={workspace} data={data} run={run} openPO={setSelected} newPO={()=>setEditing("new")} assignments={<Assignments data={data} run={run}/>}/></fieldset>}
               </>
             ) : (
               <div className="panel">
@@ -319,6 +356,7 @@ function App() {
                 busy={busy}
                 onClose={() => editorGuard.requestLeave(closeDialog)}
               >
+                {!admin && <button className="secondary po-back-results" disabled={busy} onClick={() => editorGuard.requestLeave(returnToResults)}>← Back to results</button>}
                 <FinanceFeedback busy={busy} pending={pendingMessage} error={error} message={message} onDismiss={() => { setError(""); setMessage(""); }} />
                 <fieldset disabled={busy} className="unboxed">
                   {editing ? (
@@ -438,12 +476,52 @@ function Overview({
   data: Data;
   onOpen: (id: string) => void;
 }) {
-  const [search, setSearch] = useState(""),
-    [status, setStatus] = useState(""),
-    [area, setArea] = useState(""),
-    [vendor, setVendor] = useState(""),
-    [requester, setRequester] = useState(""),
-    [approval, setApproval] = useState("");
+  const userId = d.context.profile.id;
+  const validContext = (previous: POListContext) => {
+    const area = d.context.areas.some(item => item.id === previous.area) ? previous.area : '';
+    const vendor = d.orders.some(item => item.vendor === previous.vendor) ? previous.vendor : '';
+    const requester = d.orders.some(item => item.requester_id === previous.requester) ? previous.requester : '';
+    return area === previous.area && vendor === previous.vendor && requester === previous.requester
+      ? previous : { ...previous, area, vendor, requester, scrollY: 0 };
+  };
+  const [listContext, setListContext] = useState(() => validContext(poListContextStore.read(userId)));
+  const { search, status, area, vendor, requester, approval, moreFilters } = listContext;
+  const contextRef = useRef(listContext);
+  const renderedContext = useRef(listContext);
+  if (renderedContext.current !== listContext) {
+    contextRef.current = listContext;
+    renderedContext.current = listContext;
+  }
+  const updateFilter = (key: keyof POListContext, value: string | boolean) =>
+    setListContext(previous => ({ ...previous, [key]: value, scrollY: 0 }));
+  const setSearch = (value: string) => updateFilter('search', value);
+  const setStatus = (value: string) => updateFilter('status', value);
+  const setArea = (value: string) => updateFilter('area', value);
+  const setVendor = (value: string) => updateFilter('vendor', value);
+  const setRequester = (value: string) => updateFilter('requester', value);
+  const setApproval = (value: string) => updateFilter('approval', value);
+  useEffect(() => { poListContextStore.save(userId, contextRef.current); }, [userId, listContext]);
+  useEffect(() => {
+    // Removed options must not strand the user behind an invisible filter.
+    setListContext(previous => validContext(previous));
+  }, [d]);
+  useLayoutEffect(() => {
+    const position = contextRef.current.scrollY;
+    let frame = requestAnimationFrame(() => {
+      window.scrollTo(0, position);
+      frame = requestAnimationFrame(() => window.scrollTo(0, position));
+    });
+    const capture = () => {
+      contextRef.current = { ...contextRef.current, scrollY: window.scrollY };
+      poListContextStore.save(userId, contextRef.current);
+    };
+    window.addEventListener('scroll', capture, { passive: true });
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', capture); };
+  }, [userId]);
+  const openResult = (id: string) => {
+    poListContextStore.save(userId, { ...contextRef.current, scrollY: window.scrollY });
+    onOpen(id);
+  };
   const privileged = d.context.is_admin || d.context.capabilities.length > 0;
   const who = (id: string) =>
     d.context.people.find((x) => x.id === id)?.name || "Team member";
@@ -473,7 +551,7 @@ function Overview({
   ];
   const activeFilterCount = [search, status, area, vendor, requester, approval].filter(Boolean).length;
   const secondaryFilterCount = [area, vendor, requester].filter(Boolean).length;
-  const clearFilters = () => { setSearch(""); setStatus(""); setArea(""); setVendor(""); setRequester(""); setApproval(""); };
+  const clearFilters = () => setListContext(emptyPOListContext());
   const filtered = d.orders
     .filter(
       (p) =>
@@ -585,7 +663,7 @@ function Overview({
             <option value="po_approver">Lead Coach pending</option>
           </select>
         </label>
-        <details className="secondary-filters">
+        <details className="secondary-filters" open={moreFilters} onToggle={event => { const open = event.currentTarget.open; setListContext(previous => previous.moreFilters === open ? previous : { ...previous, moreFilters: open, scrollY: contextRef.current.scrollY }); }}>
           <summary>More filters{secondaryFilterCount > 0 && <span className="filter-count">{secondaryFilterCount} applied</span>}</summary>
           <div className="secondary-filter-fields">
         <label>
@@ -641,7 +719,7 @@ function Overview({
             <button
               className="panel po-row"
               key={p.id}
-              onClick={() => onOpen(p.id)}
+              onClick={() => openResult(p.id)}
             >
               <div>
                 <small>
@@ -649,6 +727,7 @@ function Overview({
                 </small>
                 <h3>{p.vendor}</h3>
                 <p>{p.purpose}</p>
+                <p className="po-next-step-inline">{poNextStep(d, p).title}</p>
                 <small>
                   {who(p.requester_id)} ·{" "}
                   {d.context.areas.find((a) => a.id === p.area_id)?.name}
@@ -670,7 +749,7 @@ function Overview({
             <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Purchase order</th><th role="columnheader" scope="col">Requester / area</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">School reference</th><th role="columnheader" scope="col">Received</th></tr></thead>
             <tbody role="rowgroup">{received.map(p => (
               <tr role="row" key={p.id}>
-                <td role="cell" data-label="Purchase order"><button onClick={() => onOpen(p.id)}>PO {p.po_number} · {p.vendor}</button><small>{p.purpose}</small></td>
+                <td role="cell" data-label="Purchase order"><button onClick={() => openResult(p.id)}>PO {p.po_number} · {p.vendor}</button><small>{p.purpose}</small></td>
                 <td role="cell" data-label="Requester / area">{who(p.requester_id)}<small>{d.context.areas.find(a => a.id === p.area_id)?.name}</small></td>
                 <td role="cell" data-label="Amount">{money(p.amount)}</td>
                 <td role="cell" data-label="School reference">{p.school_reference || "Not provided"}</td>
@@ -850,6 +929,13 @@ function Detail({
   const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
   const owner = p.requester_id === d.context.profile.id || d.context.is_admin;
   const locked = ["cancelled", "submitted_to_school", "received"].includes(p.status);
+  const nextStep = poNextStep(d, p);
+  const goToNextStep = () => {
+    if (!nextStep.target) return;
+    const section = document.getElementById(nextStep.target);
+    section?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    section?.focus({ preventScroll: true });
+  };
   return (
     <>
       <div className="detail-heading">
@@ -864,6 +950,10 @@ function Detail({
         <strong>{money(p.amount)}</strong>
       </div>
       <Badge status={p.status} />
+      <section className="po-next-step" aria-labelledby="po-next-step-heading">
+        <div><h2 id="po-next-step-heading">{nextStep.title}</h2><p>{nextStep.description}</p></div>
+        {nextStep.target && nextStep.actionLabel && <button className="secondary" onClick={goToNextStep}>{nextStep.actionLabel}</button>}
+      </section>
       <p>
         Submitted for approval: {when(p.submitted_at)}
         {p.needed_by && <> · Needed by {p.needed_by}</>}
@@ -883,7 +973,7 @@ function Detail({
         Approvals cover the submitted spreadsheet. If you change it, edit and resubmit the PO for both approvals.
       </p>
       {owner && !locked && (
-        <div className="toolbar">
+        <div className="toolbar" id="owner-actions" tabIndex={-1}>
           <button className="secondary" onClick={edit}>
             {p.status === "draft" ? "Resume draft" : "Edit purchase order"}
           </button>
@@ -949,14 +1039,14 @@ function Detail({
               a.actor_id === d.context.profile.id,
           );
           return (
-            <section className="panel" key={slot}>
+            <section className="panel" key={slot} id={`approval-${slot}`} tabIndex={-1}>
               <h2>
                 {slot === "finance_approver"
                   ? "Finance Lead Approval"
                   : "Lead Coach Approval"}
               </h2>
               <Badge status={latest?.action || "pending"} />
-              {!latest && <p>Waiting for {slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}</p>}
+              {!latest && <p>{p.status === 'draft' ? 'Submit this draft to request approval.' : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
               {latest && (
                 <>
                   <p>
@@ -1026,7 +1116,7 @@ function Detail({
           );
         })}
       </div>
-      <section className="panel">
+      <section className="panel" id="school-submission" tabIndex={-1}>
         <h2>School Submission</h2>
         {["submitted_to_school", "received"].includes(p.status) ? (
           <>
@@ -1073,11 +1163,12 @@ function Detail({
           <p>
             {p.status === "approved"
               ? "Ready for a designated school submitter."
+              : p.status === "cancelled" ? "This request is cancelled; it will not be submitted to school."
               : "Both approvals are required for this submission."}
           </p>
         )}
       </section>
-      {["submitted_to_school", "received"].includes(p.status) && <section className="panel">
+      {["submitted_to_school", "received"].includes(p.status) && <section className="panel" id="receiving" tabIndex={-1}>
         <h2>Receiving</h2>
         {p.status === "received" ? <>
           <Badge status="received" />

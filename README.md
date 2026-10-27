@@ -52,3 +52,10 @@ No GitHub remote repository, production schema, deployment or DNS was created/ch
 The local UI and tests now use **Lead Coach Approval** and **Finance Lead Approval**. Review/apply Hub's additive `202609120003_team_management_positions.sql` before publishing this version. The migration retains old slot keys and approval history, derives normal authorization from shared positions, and leaves school submission separate. Legacy approver capability rows are retained but are no longer used for new approvals. An active mentor/admin must explicitly assign the correct position holders in Hub; no holders are guessed. Finance-only administrators cannot use emergency approval overrides. No production migration or deployment has been performed for this pending change.
 
 `tests/fixtures/team_management_positions.sql` mirrors Hub's canonical migration for independent CI; never apply the fixture separately.
+
+## Clear next steps and saved results
+
+Purchase orders explain their next step and link to the existing authorized action.
+**Back to results** returns to the current tab's user-scoped search, filters and
+position, including after reload. Hub's Request a purchase shortcut opens a blank
+form after sign-in without creating a request. See [behavior, privacy and tests](docs/PO-NEXT-STEPS-AND-CONTEXT.md).

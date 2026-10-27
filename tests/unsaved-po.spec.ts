@@ -193,7 +193,9 @@ test('Sheet opens separately; same-document Back/Forward retain the editor and n
   await expect(editor(page).getByLabel('Vendor', { exact: true })).toHaveValue('Unfinished supplier');
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStarted);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['4418-finance-auth']);
-  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual(['4418-finance-po-list-v1']);
+  expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain('Unfinished supplier');
+  expect(await page.evaluate(() => JSON.stringify(sessionStorage))).not.toContain('Draft123');
   expect(calls).toEqual([]);
 });
 
