@@ -5,7 +5,7 @@ import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspac
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
-import { poNextStep, selfApprovalGuidance } from "./po-next-step";
+import { poNextStep, selfApprovalGuidance, closedSeasonGuidance } from "./po-next-step";
 import { poListContextStore, emptyPOListContext, type POListContext } from "./po-list-context";
 import { createPOEditorGuard, preservesPOEditor, poFormSnapshot } from './po-editor-guard';
 import {
@@ -1174,7 +1174,8 @@ function Detail({
           <Badge status="received" />
           <p>{name(p.received_by)} · {when(p.received_at)}</p>
           {p.receipt_note && <p>{p.receipt_note}</p>}
-        </> : canOverride || d.context.capabilities.includes("school_submitter") ? (
+        </> : d.closedSeasonPOIds.includes(p.id) ? <p>{closedSeasonGuidance}</p>
+        : canOverride || d.context.capabilities.includes("school_submitter") ? (
           <form className="form" onSubmit={e => {
             const f = fields(e);
             void run(() => mutate("receive", { id: p.id, version: p.version, note: f.note }), "Marked received");

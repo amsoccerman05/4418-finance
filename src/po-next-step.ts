@@ -12,6 +12,8 @@ const approvalSlots = ["po_approver", "finance_approver"] as const;
 const slotName = (slot: typeof approvalSlots[number]) =>
   slot === "finance_approver" ? "Finance Lead" : "Lead Coach";
 
+export const closedSeasonGuidance = "This purchase order belongs to a closed budget season and is read-only. It cannot be marked received.";
+
 export const selfApprovalGuidance = "You requested this PO, so you cannot approve it yourself. Ask a different mentor or admin who has not already approved this revision to review it using the existing override process. An explicit override reason and two different approvers are still required.";
 
 /** A visibility explanation, never an authorization for the requester to act. */
@@ -120,6 +122,12 @@ export function poNextStep(d: Data, p: PO): PONextStep {
         actionLabel: "View submission status",
       };
     case "submitted_to_school":
+      if (d.closedSeasonPOIds.includes(p.id)) return {
+        title: "Closed season — read-only",
+        description: closedSeasonGuidance,
+        target: "receiving",
+        actionLabel: "View receiving status",
+      };
       return canSubmitOrReceive ? {
         title: "Confirm delivery when everything arrives",
         description: "Once the entire order has arrived, mark it received below. This records delivery without changing Inventory stock or adding another expense.",

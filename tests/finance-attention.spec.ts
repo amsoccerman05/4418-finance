@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const viewer = '00000000-0000-0000-0000-000000000001';
-async function fixture(page: Page, options: { self?: boolean; status?: string; budget?: 'none' | 'empty'; capabilities?: string[]; coachApproved?: boolean } = {}) {
+async function fixture(page: Page, options: { self?: boolean; status?: string; budget?: 'none' | 'empty'; capabilities?: string[]; coachApproved?: boolean; viewerApproved?: boolean } = {}) {
   const calls: unknown[] = [];
   const order = {
     id: '00000000-0000-0000-0000-000000000101', po_number: 42,
@@ -14,7 +14,7 @@ async function fixture(page: Page, options: { self?: boolean; status?: string; b
   const capabilities = options.capabilities ?? ['finance_approver', 'finance_admin'];
   const approvals = options.coachApproved === false ? [] : [{
     id: 'fixture-approval', po_id: order.id, revision: 2, slot: 'po_approver', action: 'approved',
-    actor_id: 'coach', acted_at: '2026-01-02T12:00:00Z', explanation: '', override_reason: '',
+    actor_id: options.viewerApproved ? viewer : 'coach', acted_at: '2026-01-02T12:00:00Z', explanation: '', override_reason: '',
   }];
   await page.addInitScript(viewer => localStorage.setItem('4418-finance-auth', JSON.stringify({
     access_token: 'fixture-token', refresh_token: 'fixture-refresh', expires_at: 4000000000, token_type: 'bearer',
@@ -112,3 +112,32 @@ test('completed Finance approval removes the blocked-self explanation after relo
   await expect(page.getByRole('heading', { name: 'Waiting for independent review' })).toHaveCount(0);
   expect(calls).toEqual([]);
 });
+
+
+for (const width of [390, 1440]) {
+  test(`already-approved reviewer leaves the actionable queue but remains visible in all orders ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { calls, order, approvals } = await fixture(page, { self: false, capabilities: ['po_approver', 'finance_approver'], viewerApproved: true, budget: 'none' });
+    await page.goto('/#dashboard');
+    const attention = page.getByRole('region', { name: 'Needs attention', exact: true });
+    await expect(attention).toContainText('No purchase orders currently need an approval or school submission from you.');
+    await expect(attention.getByRole('button', { name: /Review purchase/ })).toHaveCount(0);
+    await attention.screenshot({ path: `test-results/finance-already-approved-${width}.png` });
+    await attention.getByRole('link', { name: 'Open purchase orders', exact: true }).click();
+    await page.getByRole('button', { name: /Fixture supplier/ }).click();
+    const detail = page.getByRole('dialog').first();
+    await expect(detail).toContainText('Waiting for another approver');
+    await expect(detail.getByRole('button', { name: /^Approve/ })).toHaveCount(0);
+    await detail.getByRole('button', { name: '← Back to results', exact: true }).click();
+    await page.reload();
+    await page.getByLabel('Approval state').selectOption('mine');
+    await expect(page.getByRole('button', { name: /Fixture supplier/ })).toHaveCount(0);
+    // A genuine resubmission is a new revision, not a permanent exclusion.
+    order.revision++;
+    await page.reload();
+    await expect(page.getByRole('button', { name: /Fixture supplier/ })).toBeVisible();
+    expect(approvals).toHaveLength(1);
+    expect(calls).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
