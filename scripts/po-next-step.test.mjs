@@ -8,7 +8,7 @@ const source = readFileSync(new URL('../src/po-next-step.ts', import.meta.url), 
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 vm.runInNewContext(code, { module, exports: module.exports });
-const { poNextStep } = module.exports;
+const { poNextStep, selfApprovalBlocked } = module.exports;
 const po = (status = 'awaiting_approval', props = {}) => ({ id: 'po', requester_id: 'requester', status, revision: 3, ...props });
 const data = (props = {}) => ({
   context: { profile: { id: 'viewer', role: 'student' }, capabilities: [], is_admin: false, ...props.context },
@@ -18,6 +18,25 @@ const approval = (slot, actor_id = 'approver', props = {}) => ({ po_id: 'po', re
 const roles = ['student', 'lead', 'mentor', 'admin'];
 const slots = ['po_approver', 'finance_approver'];
 const next = (status, props = {}, poProps = {}) => poNextStep(data(props), po(status, poProps));
+
+test('self-approval waiting explanation follows the current assigned slot, not Finance administration', () => {
+  const own = po('awaiting_approval', { requester_id: 'viewer' });
+  const context = { profile: { id: 'viewer', role: 'lead' }, capabilities: ['finance_approver', 'finance_admin'], is_admin: true };
+  const d = data({ context, approvals: [approval('po_approver', 'coach')] });
+  assert.equal(selfApprovalBlocked(d, own), true);
+  assert.match(poNextStep(d, own).description, /different mentor or admin who has not already approved this revision/);
+  assert.match(poNextStep(d, own).description, /explicit override reason and two different approvers/);
+  assert.equal(selfApprovalBlocked(data({ context, approvals: [approval('finance_approver')] }), own), false);
+  for (const stale of [approval('finance_approver', 'mentor', { revision: 2 }), approval('finance_approver', 'mentor', { po_id: 'other' }), approval('finance_approver', 'mentor', { action: 'changes_requested' })]) {
+    assert.equal(selfApprovalBlocked(data({ context, approvals: [stale] }), own), true);
+  }
+  for (const status of ['draft', 'changes_requested', 'approved', 'submitted_to_school', 'received', 'cancelled']) {
+    assert.equal(selfApprovalBlocked(d, { ...own, status }), false);
+  }
+  for (const role of ['mentor', 'admin']) assert.equal(selfApprovalBlocked(data({ context: { ...context, profile: { id: 'viewer', role } } }), own), false);
+  assert.equal(selfApprovalBlocked(data({ context: { ...context, capabilities: ['finance_admin'] } }), own), false);
+  assert.equal(selfApprovalBlocked(d, po()), false);
+});
 
 test('every known state has an explicit non-mutating next step', () => {
   for (const status of ['draft', 'awaiting_approval', 'changes_requested', 'approved', 'submitted_to_school', 'received', 'cancelled']) {

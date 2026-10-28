@@ -12,6 +12,18 @@ const approvalSlots = ["po_approver", "finance_approver"] as const;
 const slotName = (slot: typeof approvalSlots[number]) =>
   slot === "finance_approver" ? "Finance Lead" : "Lead Coach";
 
+export const selfApprovalGuidance = "You requested this PO, so you cannot approve it yourself. Ask a different mentor or admin who has not already approved this revision to review it using the existing override process. An explicit override reason and two different approvers are still required.";
+
+/** A visibility explanation, never an authorization for the requester to act. */
+export function selfApprovalBlocked(d: Data, p: PO): boolean {
+  return p.status === "awaiting_approval" &&
+    p.requester_id === d.context.profile.id &&
+    !["admin", "mentor"].includes(d.context.profile.role) &&
+    approvalSlots.some(slot => d.context.capabilities.includes(slot) &&
+      !d.approvals.some(a => a.po_id === p.id && a.revision === p.revision &&
+        a.slot === slot && a.action === "approved"));
+}
+
 /**
  * Explain the next step using the same role, revision and two-person checks as
  * Detail. The server remains the authority for every mutation; do not use this
@@ -67,9 +79,9 @@ export function poNextStep(d: Data, p: PO): PONextStep {
         target: waitingTarget,
         actionLabel: "View approval status",
       };
-      if (requester && !canOverride && pending.some(slot => d.context.capabilities.includes(slot))) return {
+      if (selfApprovalBlocked(d, p)) return {
         title: "A mentor must review your request",
-        description: `You requested this PO, so you cannot approve it yourself. Ask a mentor to review it using the existing override process. Waiting for ${waiting}; two different approvers are still required.`,
+        description: `${selfApprovalGuidance} Waiting for ${waiting}.`,
         target: waitingTarget,
         actionLabel: "View approval status",
       };
