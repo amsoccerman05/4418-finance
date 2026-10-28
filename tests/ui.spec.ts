@@ -572,12 +572,18 @@ test('failed actionability load does not briefly expose receiving and a retry re
   const { orders, calls } = await mock(page, ['school_submitter']);
   orders.push(submittedOrder({ season_closed: true }));
   let failed = true;
+  let readAttempts = 0;
   await page.route('**/rest/v1/finance_po_actionability*', async route => {
+    readAttempts++;
     if (failed) return route.fulfill({ status: 503, json: { message: 'Fixture actionability unavailable' } });
     await route.fallback();
   });
   await page.goto('/#orders');
-  await expect(page.getByRole('alert')).toContainText('Fixture actionability unavailable');
+  await expect(page.getByText('Loading Finance…', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark received', exact: true })).toHaveCount(0);
+  // Supabase retries idempotent 503 reads with 1s/2s/4s backoff before rejecting.
+  await expect(page.getByRole('alert')).toContainText('Fixture actionability unavailable', { timeout: 12000 });
+  expect(readAttempts).toBeGreaterThan(1);
   await expect(page.getByRole('button', { name: 'Mark received', exact: true })).toHaveCount(0);
   failed = false;
   await page.getByRole('button', { name: 'Reload Finance', exact: true }).click();
