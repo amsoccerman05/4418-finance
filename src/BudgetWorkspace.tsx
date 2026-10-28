@@ -17,7 +17,8 @@ import {
   Home,
   Plus,
 } from "lucide-react";
-import { money, label, when, needsMe, type Data, type PO } from "./service";
+import { money, label, when, type Data, type PO } from "./service";
+import { FinanceAttention } from "./FinanceAttention";
 import {
   loadBudget,
   budgetMutate,
@@ -357,10 +358,8 @@ export function BudgetWorkspace({
     input("notes", "Notes", i?.notes),
     ...(i || s?.status === "active" ? [why] : []),
   ];
-  const attention = data.orders.filter(p=>needsMe(data,p)||(p.status==='approved'&&(data.context.capabilities.includes('school_submitter')||['mentor','admin'].includes(data.context.profile.role))));
   const exceptions = cats.filter(c=>c.active&&(c.available<0||(c.funded>0&&c.available/c.funded<=0.1)));
   const overdue = budget?.income?.filter(i=>i.status==='expected'&&i.expected_on&&i.expected_on<new Date().toISOString().slice(0,10)) || [];
-  const attentionPanel = attention.length > 0 ? <section className="panel attention-panel"><h2>Needs attention</h2><ul>{attention.map((p)=><li key={p.id}><button className="secondary" onClick={()=>openPO(p.id)}>PO {p.po_number} · {p.vendor} · {p.status === 'approved' ? 'Submit to school' : 'Review purchase'}</button></li>)}</ul></section> : null;
   return (
     <section className="budget-workspace" key={`${s?.id}-${s?.version}`}>
       <FinancePageHeader
@@ -377,7 +376,7 @@ export function BudgetWorkspace({
         </label>}
       </FinancePageHeader>
       {error && <p role="alert">{error}</p>}
-      {page === "dashboard" && !budget?.can_manage && attentionPanel}
+      {page === "dashboard" && <FinanceAttention data={data} openPO={openPO} />}
       {!budget && !error && <p role="status">Loading Finance…</p>}
       {budget &&
         !budget.can_manage &&
@@ -444,7 +443,7 @@ export function BudgetWorkspace({
                 {s.status === "closed" && " · Historical records are read-only"}
               </p>}
               {page === "dashboard" && <nav className="workspace-links" aria-label="Finance quick links"><a href="#budget"><Wallet size={19} aria-hidden="true" /><span>{s.status === "draft" ? "Continue budget setup" : "View category balances"}</span><ArrowUpRight size={17} aria-hidden="true" /></a><a href="#income"><HandCoins size={19} aria-hidden="true" /><span>Track income</span><ArrowUpRight size={17} aria-hidden="true" /></a><a href="#expenses"><Receipt size={19} aria-hidden="true" /><span>Other spending & credits</span><ArrowUpRight size={17} aria-hidden="true" /></a></nav>}
-              {(page === 'dashboard' || page === 'reports') && <Analytics key={`analytics-${s.id}`} budget={budget} reports={page==='reports'}>{page==='dashboard' && attentionPanel}</Analytics>}
+              {(page === 'dashboard' || page === 'reports') && <Analytics key={`analytics-${s.id}`} budget={budget} reports={page==='reports'}/>}
               {page === 'dashboard' && <>
                 {(exceptions.length>0||overdue.length>0)&&<section className="panel attention-panel"><h2>Budget watch</h2><ul>{exceptions.map(c=><li key={c.id}><a href="#budget">{c.name}</a> · {c.available<0?`${money(-c.available)} over budget`:`${money(c.available)} available · 10% or less remaining`}</li>)}{overdue.map(i=><li key={i.id}><a href="#income">{i.source}</a> · {money(i.amount)} expected on {i.expected_on}</li>)}</ul><small>Planning reminders only; these do not block purchases.</small></section>}
                 <RecentActivity budget={budget}/>

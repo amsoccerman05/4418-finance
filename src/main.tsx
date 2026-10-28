@@ -5,7 +5,7 @@ import { FinanceNav, BudgetWorkspace, ApprovalCoding, currentWorkspace, workspac
 import {loadBudget} from './budget-service';
 import {AuthSurface} from './AuthSurface';
 import { SuiteHeader } from './SuiteHeader';
-import { poNextStep } from "./po-next-step";
+import { poNextStep, selfApprovalGuidance } from "./po-next-step";
 import { poListContextStore, emptyPOListContext, type POListContext } from "./po-list-context";
 import { createPOEditorGuard, preservesPOEditor, poFormSnapshot } from './po-editor-guard';
 import {
@@ -1060,7 +1060,7 @@ function Detail({
               )}
               {p.status === "awaiting_approval" && p.requester_id === d.context.profile.id &&
                 d.context.capabilities.includes(slot) && !canOverride && !approved(d,p,slot) && (
-                <p>You requested this PO, so you cannot approve it yourself. Ask a mentor to review it using the existing override process. Two different approvers are still required.</p>
+                <p>{selfApprovalGuidance}</p>
               )}
               {canAct && (
                 <form
