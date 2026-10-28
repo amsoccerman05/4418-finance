@@ -93,6 +93,7 @@ export async function buildFinanceWorkbook(
     (id ? String(id) : "Unallocated");
   const po = (id: unknown) =>
     data.purchase_orders.find((p) => p.id === id)?.po_number;
+  const detailScope = "Totals cover the whole season; purchase-order details and activity include only POs you can view.";
   const title = `FRC Team 4418 · IMPULSE | ${season.name} · ${label(season.status)}`;
   // The exact snapshot timestamp is on the Summary; the template has no personal metadata.
   for (const sheet of w.sheets()) sheet.cell("A2").value(title);
@@ -142,6 +143,7 @@ export async function buildFinanceWorkbook(
     sh.definedName("_xlnm.Print_Area", sh.range(1, 1, last + 2, n));
     return sh;
   };
+  summary.cell("A23").value(detailScope).style({ wrapText: true });
   summary.range("A4:J20").style("fill", "FFFFFF");
   summary.range("A4:C4").merged(true).value("Season status");
   summary.range("D4:J4").merged(true).value(label(season.status));

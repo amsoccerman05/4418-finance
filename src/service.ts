@@ -71,6 +71,7 @@ export type Context = {
   capabilities: string[];
   areas: { id: string; name: string; active: boolean }[];
   people: { id: string; name: string }[];
+  coach_self_approvals?: { po_id: string; allowed: boolean; reason: string }[];
 };
 export type Data = {
   context: Context;
@@ -120,6 +121,9 @@ async function rows<T>(table: string, sort = "id") {
 }
 export async function load(): Promise<Data> {
   const context = await rpc("finance_context");
+  if (!["student", "lead", "admin_lead", "mentor", "admin"].includes(context.profile?.role)) {
+    context.can_create = false; context.is_admin = false; context.capabilities = []; context.coach_self_approvals = [];
+  }
   const [orders, approvals, history, revisions, assignments, actionability] =
     await Promise.all([
       rows<PO>("finance_purchase_orders"),
@@ -148,10 +152,30 @@ export function approved(d: Data, p: PO, slot: string) {
 }
 export function needsMe(d: Data, p: PO) {
   return (
+    canChangePOs(d) &&
     p.status === "awaiting_approval" &&
-    p.requester_id !== d.context.profile.id &&
+    (p.requester_id !== d.context.profile.id || canSelfApproveCoach(d, p)) &&
     !d.approvals.some(a => a.po_id === p.id && a.revision === p.revision &&
       a.action === "approved" && a.actor_id === d.context.profile.id) &&
     slots.some((s) => d.context.capabilities.includes(s) && !approved(d, p, s))
   );
+}
+
+/** Presentation only; every write rechecks live server authority. */
+export function canChangePOs(d: Data) {
+  return ["student", "lead", "admin_lead", "mentor", "admin"].includes(d.context.profile.role);
+}
+export function coachSelfFact(d: Data, p: PO) {
+  return p.requester_id === d.context.profile.id && ["mentor", "admin"].includes(d.context.profile.role)
+    ? d.context.coach_self_approvals?.find(f => f.po_id === p.id) : undefined;
+}
+export function canSelfApproveCoach(d: Data, p: PO) {
+  return p.status === "awaiting_approval" && coachSelfFact(d, p)?.allowed === true;
+}
+export function hasCoachSelfApproval(d: Data, p: PO) {
+  return d.approvals.some(a => a.po_id === p.id && a.revision === p.revision && a.slot === "po_approver"
+    && a.action === "approved" && a.actor_id === p.requester_id && d.history.some(h => h.po_id === p.id
+      && h.revision === p.revision && h.actor_id === a.actor_id && h.action === "approve"
+      && h.details.approval_id === a.id && h.details.slot === a.slot
+      && h.details.approval_authority === "assigned_lead_coach_self"));
 }

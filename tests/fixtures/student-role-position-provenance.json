@@ -1,0 +1,6 @@
+{
+  "repository": "amsoccerman05/4418-team-hub",
+  "source": "supabase/migrations/20261028160322_student_admin_lead_roles.sql",
+  "source_sha256": "84785b44138b4e9550f34130ccc2de7c4aaf1a6f102b9ac0fc7f45d1d4389d71",
+  "excerpt_sha256": "4da224dc4f797f3910bc93d92f6a71510e027ca6a2fd5c8e67ea8f5ac800488f"
+}

@@ -1,4 +1,4 @@
-import type { Data, PO } from "./service";
+import { canChangePOs, coachSelfFact, canSelfApproveCoach, hasCoachSelfApproval, type Data, type PO } from "./service";
 
 /** Presentation only. These destinations never submit or authorize an action. */
 export type PONextStep = {
@@ -18,7 +18,7 @@ export const selfApprovalGuidance = "You requested this PO, so you cannot approv
 
 /** A visibility explanation, never an authorization for the requester to act. */
 export function selfApprovalBlocked(d: Data, p: PO): boolean {
-  return p.status === "awaiting_approval" &&
+  return canChangePOs(d) && p.status === "awaiting_approval" &&
     p.requester_id === d.context.profile.id &&
     !["admin", "mentor"].includes(d.context.profile.role) &&
     approvalSlots.some(slot => d.context.capabilities.includes(slot) &&
@@ -32,6 +32,7 @@ export function selfApprovalBlocked(d: Data, p: PO): boolean {
  * helper as an authorization predicate.
  */
 export function poNextStep(d: Data, p: PO): PONextStep {
+  if (!canChangePOs(d)) return { title: "Read-only access", description: "You can view this purchase order, its history and linked Google Sheet. Your account cannot change it.", target: null, actionLabel: null };
   const viewer = d.context.profile.id;
   const requester = p.requester_id === viewer;
   const owner = requester || d.context.is_admin;
@@ -86,6 +87,14 @@ export function poNextStep(d: Data, p: PO): PONextStep {
         description: `${selfApprovalGuidance} Waiting for ${waiting}.`,
         target: waitingTarget,
         actionLabel: "View approval status",
+      };
+      const ownCoach = coachSelfFact(d, p);
+      if (ownCoach) return canSelfApproveCoach(d, p) ? {
+        title: "Review your Coach approval", description: ownCoach.reason,
+        target: "approval-po_approver", actionLabel: "Review Coach approval",
+      } : { title: "A new submission is needed for your Coach approval", description: ownCoach.reason, target: null, actionLabel: null };
+      if (requester && hasCoachSelfApproval(d, p)) return {
+        title: "Waiting for a different Finance Lead", description: "Your Coach approval is recorded. A different assigned Finance Lead must complete Finance.", target: "approval-finance_approver", actionLabel: "View approval status",
       };
       const assigned = pending.find(slot => d.context.capabilities.includes(slot));
       const actionable = (!requester || canOverride) && (assigned || (canOverride ? pending[0] : undefined));

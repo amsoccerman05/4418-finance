@@ -5,3 +5,7 @@ dist/
 .env.live-test
 test-results/
 playwright-report/
+.playwright-dist/
+.playwright-integrity.json
+__pycache__/
+supabase/.temp/

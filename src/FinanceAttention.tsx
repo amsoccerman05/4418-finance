@@ -1,10 +1,10 @@
-import { needsMe, type Data } from "./service";
+import { needsMe, canChangePOs, type Data } from "./service";
 import { selfApprovalBlocked, selfApprovalGuidance } from "./po-next-step";
 
 /** Show only records already returned by Finance's existing row-level policies. */
 export function FinanceAttention({ data, openPO }: { data: Data; openPO: (id: string) => void }) {
-  const canSubmit = data.context.capabilities.includes("school_submitter") ||
-    ["mentor", "admin"].includes(data.context.profile.role);
+  const canSubmit = canChangePOs(data) && (data.context.capabilities.includes("school_submitter") ||
+    ["mentor", "admin"].includes(data.context.profile.role));
   const attention = data.orders.filter(p => needsMe(data, p) || (p.status === "approved" && canSubmit));
   const blocked = data.orders.filter(p => selfApprovalBlocked(data, p));
   return <section className="panel attention-panel" aria-labelledby="finance-attention-title">

@@ -29,6 +29,11 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - name: Native disposable PostgreSQL strict Readonly lock-wait checks
+        run: |
+          PG_BIN=$(find /usr/lib/postgresql -path '*/bin/postgres' -type f -printf '%h\n' | sort -V | tail -1)
+          test -n "$PG_BIN"
+          PG_BIN_DIR="$PG_BIN" python3 tests/native-postgres/readonly_po_concurrency.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

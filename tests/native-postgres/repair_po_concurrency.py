@@ -143,11 +143,11 @@ class Cluster:
         self.directory = Path(tempfile.mkdtemp(prefix="repair-po-pg-"))
         self.data = self.directory / "data"
         self.log = self.directory / "postgres.log"
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind(("127.0.0.1", 0))
-            self.port = probe.getsockname()[1]
         self.started = False
         try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind(("127.0.0.1", 0))
+                self.port = probe.getsockname()[1]
             subprocess.run([str(PG_BIN / "initdb"), "-D", str(self.data), "-U", "bridge_fixture",
                             "--auth-local=reject", "--auth-host=trust", "--no-locale", "--encoding=UTF8"],
                            env=ENV, check=True, capture_output=True, text=True)

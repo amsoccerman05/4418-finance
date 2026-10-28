@@ -1,3 +1,4 @@
+import { canChangePOs } from "./service";
 import { FinancePageHeader } from "./FinancePageHeader";
 import { FinanceExport } from "./FinanceExport";
 import { Analytics, RecentActivity } from "./FinanceAnalytics";
@@ -275,7 +276,7 @@ export function BudgetWorkspace({
     setBudget(null);
     void loadBudget(season)
       .then((b) => {
-        if (alive) setBudget(b);
+        if (alive) setBudget(canChangePOs(data) ? b : { ...b, can_manage: false });
       })
       .catch((e) => {
         if (alive) setError(e.message);
@@ -287,7 +288,7 @@ export function BudgetWorkspace({
   const s = budget?.summary?.season,
     b = budget?.summary,
     cats = b?.categories || [],
-    editable = s && s.status !== "closed";
+    editable = canChangePOs(data) && s && s.status !== "closed";
   const catOptions = [
     { value: "", label: "Unrestricted / Unallocated" },
     ...cats
@@ -384,7 +385,8 @@ export function BudgetWorkspace({
         page !== "settings" && (
           <p>Budget access is available to designated team leadership.</p>
         )}
-      {budget?.can_manage && (
+      {budget?.can_manage && <p className="muted">Totals cover the whole budget season. PO links, workbook detail and PO activity include only purchase orders you can view.</p>}
+      {budget?.can_manage && canChangePOs(data) && (
         <>
           {budget.summary && budget.summary.allocated > 0 && budget.summary.actual_funding === 0 && <aside className="panel funding-warning"><h2>Allocated without funding</h2><p>Your categories have allocations, but no starting funds or received income have been recorded. Expected income is still a plan.</p><a href={s?.status === "draft" ? "#budget" : "#settings"}>Set starting funds</a>{" · "}<a href="#income">Record received income</a></aside>}
           {!s && (
@@ -788,7 +790,7 @@ export function BudgetWorkspace({
           )}
         </>
       )}
-      {page === "settings" && data.context.is_admin && (
+      {page === "settings" && canChangePOs(data) && data.context.is_admin && (
         <section className="panel">
           <h2>Finance assignments</h2>
           {assignments}
@@ -799,7 +801,7 @@ export function BudgetWorkspace({
           <FileText className="empty-icon" size={28} aria-hidden="true" />
           <h2>Your purchase orders</h2>
           <p>Your purchase orders and their approval history are available in Purchase Orders.</p>
-          <div className="finance-empty-actions">{data.context.can_create && <button className="primary" onClick={newPO}><Plus size={18} aria-hidden="true" />New purchase order</button>}<a className="secondary" href="#orders">View purchase orders</a></div>
+          <div className="finance-empty-actions">{canChangePOs(data) && data.context.can_create && <button className="primary" onClick={newPO}><Plus size={18} aria-hidden="true" />New purchase order</button>}<a className="secondary" href="#orders">View purchase orders</a></div>
         </div>
       )}
     </section>
