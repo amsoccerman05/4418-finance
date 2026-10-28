@@ -404,11 +404,11 @@ function App() {
               </Dialog>
             )}
             {editing && editorGuard.confirming && (
-              <Dialog title="Save your purchase order?" busy={busy} onClose={editorGuard.keepEditing} closeLabel="Keep editing" className="po-leave-dialog">
-                <p>Your changes have not been saved. Save a draft to resume later, or discard only these unsaved edits.</p>
-                <p className="muted">Saving a draft does not submit it for approval. Required fields must be complete.</p>
+              <Dialog title={data && canChangePOs(data) ? "Save your purchase order?" : "Keep your unsaved work?"} busy={busy} onClose={editorGuard.keepEditing} closeLabel="Keep editing" className="po-leave-dialog">
+                <p>{data && canChangePOs(data) ? "Your changes have not been saved. Save a draft to resume later, or discard only these unsaved edits." : "Your account is read-only. Keep this editor open to copy your unsaved text, or discard only these local edits. Nothing will be saved."}</p>
+                {data && canChangePOs(data) && <p className="muted">Saving a draft does not submit it for approval. Required fields must be complete.</p>}
                 <div className="toolbar po-leave-actions">
-                  <button className="primary" disabled={busy || !data || !canChangePOs(data)} onClick={() => {
+                  {data && canChangePOs(data) && <button className="primary" disabled={busy} onClick={() => {
                     // Close the confirmation before browser validation focuses
                     // a missing field in the still-mounted underlying form.
                     editorGuard.beginSaveAndLeave();
@@ -416,7 +416,7 @@ function App() {
                       if (poForm.current?.reportValidity()) poForm.current.requestSubmit();
                       else editorGuard.saveFailed();
                     });
-                  }}>Save draft</button>
+                  }}>Save draft</button>}
                   <button className="danger" disabled={busy} onClick={editorGuard.discard}>Discard changes</button>
                 </div>
               </Dialog>
