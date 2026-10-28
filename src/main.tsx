@@ -835,7 +835,7 @@ function POForm({
       }}
     >
       {!canChangePOs(data) && <p role="status">Your account is now read-only. Your unsaved text is kept here; keep this window open to copy it, or discard it when ready. Saving is unavailable.</p>}
-      <p className="po-draft-help">Save a draft before leaving. Resume it from Purchase orders by opening the draft and choosing <strong>Resume draft</strong>. Nothing is submitted for approval automatically.</p>
+      {canChangePOs(data) && <p className="po-draft-help">Save a draft before leaving. Resume it from Purchase orders by opening the draft and choosing <strong>Resume draft</strong>. Nothing is submitted for approval automatically.</p>}
       <label>
         Google Sheet URL
         <input
@@ -983,7 +983,7 @@ function Detail({
         </a>
       )}
       <p className="muted">
-        Approvals cover the submitted spreadsheet. If you change it, edit and resubmit the PO for both approvals.
+        Approvals cover the submitted spreadsheet.{owner && !locked && <> If you change it, edit and resubmit the PO for both approvals.</>}
       </p>
       {owner && !locked && (
         <div className="toolbar" id="owner-actions" tabIndex={-1}>
@@ -1060,7 +1060,7 @@ function Detail({
                   : "Lead Coach Approval"}
               </h2>
               <Badge status={latest?.action || (p.status === "draft" ? "not_submitted" : p.status === "cancelled" ? "not_required" : p.status === "changes_requested" ? "awaiting_resubmission" : "pending")} />
-              {!latest && <p>{p.status === 'draft' ? 'Submit this draft to request approval.' : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
+              {!latest && <p>{p.status === 'draft' ? (owner ? 'Submit this draft to request approval.' : 'This draft has not been submitted for approval.') : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
               {latest && (
                 <>
                   <p>
