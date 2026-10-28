@@ -59,3 +59,7 @@ Purchase orders explain their next step and link to the existing authorized acti
 **Back to results** returns to the current tab's user-scoped search, filters and
 position, including after reload. Hub's Request a purchase shortcut opens a blank
 form after sign-in without creating a request. See [behavior, privacy and tests](docs/PO-NEXT-STEPS-AND-CONTEXT.md).
+
+## Truthful approval and receiving actions
+
+Approval queues no longer ask someone to approve the same revision twice. Closed-season purchase orders explain their read-only state instead of offering an unavailable receiving action. The narrow read-only actionability view must be reviewed and applied before this frontend is released; see [behavior, security boundaries and release checks](docs/PO-ACTIONABILITY.md).

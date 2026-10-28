@@ -13,6 +13,7 @@ const po = (status = 'awaiting_approval', props = {}) => ({ id: 'po', requester_
 const data = (props = {}) => ({
   context: { profile: { id: 'viewer', role: 'student' }, capabilities: [], is_admin: false, ...props.context },
   approvals: props.approvals || [],
+  closedSeasonPOIds: props.closedSeasonPOIds || [],
 });
 const approval = (slot, actor_id = 'approver', props = {}) => ({ po_id: 'po', revision: 3, slot, actor_id, action: 'approved', ...props });
 const roles = ['student', 'lead', 'mentor', 'admin'];
@@ -175,4 +176,19 @@ test('helper does not mutate the supplied PO, context, or approval records', () 
   const before = JSON.stringify({ d, p });
   for (let i = 0; i < 3; i++) poNextStep(d, p);
   assert.equal(JSON.stringify({ d, p }), before);
+});
+
+
+test('closed-season receiving is read-only for every role, without changing received records', () => {
+  for (const role of roles) {
+    for (const capabilities of [[], ['school_submitter'], ['finance_approver'], ['finance_admin']]) {
+      const props = { context: { profile: { id: 'viewer', role }, capabilities }, closedSeasonPOIds: ['po'] };
+      const result = next('submitted_to_school', props);
+      assert.equal(result.title, 'Closed season — read-only');
+      assert.equal(result.actionLabel, 'View receiving status');
+      assert.match(result.description, /cannot be marked received/);
+      assert.equal(next('received', props).title, 'Purchase order complete');
+      assert.equal(next('submitted_to_school', { ...props, closedSeasonPOIds: ['different-po'] }).title.includes('Closed season'), false);
+    }
+  }
 });

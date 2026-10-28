@@ -79,6 +79,7 @@ export type Data = {
   history: History[];
   revisions: Revision[];
   assignments: Assignment[];
+  closedSeasonPOIds: string[];
 };
 export const label = (s: string) =>
   ({ finance_approver: "Finance Lead", po_approver: "Lead Coach", receive: "Received" } as Record<string,string>)[s] || s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -119,15 +120,18 @@ async function rows<T>(table: string, sort = "id") {
 }
 export async function load(): Promise<Data> {
   const context = await rpc("finance_context");
-  const [orders, approvals, history, revisions, assignments] =
+  const [orders, approvals, history, revisions, assignments, actionability] =
     await Promise.all([
       rows<PO>("finance_purchase_orders"),
       rows<Approval>("finance_po_approvals"),
       rows<History>("finance_po_history"),
       rows<Revision>("finance_po_revisions", "po_id"),
       rows<Assignment>("finance_assignments"),
+      rows<{ id: string; season_closed: boolean }>("finance_po_actionability"),
     ]);
-  return { context, orders, approvals, history, revisions, assignments };
+  return { context, orders, approvals, history, revisions, assignments,
+    closedSeasonPOIds: actionability.filter(p => p.season_closed).map(p => p.id),
+  };
 }
 export const slots = ["po_approver", "finance_approver"];
 export function approved(d: Data, p: PO, slot: string) {
@@ -146,6 +150,8 @@ export function needsMe(d: Data, p: PO) {
   return (
     p.status === "awaiting_approval" &&
     p.requester_id !== d.context.profile.id &&
+    !d.approvals.some(a => a.po_id === p.id && a.revision === p.revision &&
+      a.action === "approved" && a.actor_id === d.context.profile.id) &&
     slots.some((s) => d.context.capabilities.includes(s) && !approved(d, p, s))
   );
 }

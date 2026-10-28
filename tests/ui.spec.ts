@@ -61,6 +61,7 @@ async function mock(page: Page, capabilities: string[] = [], isAdmin = false) {
       else if (path.endsWith("/finance_po_history")) data = history;
       else if (path.endsWith("/finance_po_revisions")) data = revisions;
       else if (path.endsWith("/finance_assignments")) data = [];
+      else if (path.endsWith("/finance_po_actionability")) data = orders.map(p => ({ id: p.id, season_closed: p.season_closed === true }));
       else if (path.endsWith("/finance_mutate")) {
         calls.push(body);
         const p = body.p;
@@ -540,4 +541,47 @@ test('Finance Lead sees why their own PO has no approval action',async({page})=>
  await expect(page.locator('#approval-finance_approver').getByText('You requested this PO, so you cannot approve it yourself.',{exact:false})).toBeVisible();
  await expect(page.locator('.po-next-step')).toContainText('A mentor must review your request');
  await expect(page.getByRole('button',{name:'Approve & assign budget'})).toHaveCount(0);expect(calls).toEqual([]);
+});
+
+
+for (const width of [390, 1440]) {
+  test(`closed-season receiving explains the lock without offering an impossible action ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { orders, calls } = await mock(page, ['school_submitter']);
+    orders.push(submittedOrder({ season_closed: true }));
+    await page.goto('/#orders');
+    await page.getByRole('button', { name: /Receiving supplier/ }).click();
+    const detail = page.getByRole('dialog').first();
+    await expect(detail.locator('.po-next-step')).toContainText('Closed season — read-only');
+    await expect(detail.locator('#receiving')).toContainText('cannot be marked received');
+    await expect(detail.getByRole('button', { name: 'Mark received', exact: true })).toHaveCount(0);
+    await expect(detail.getByLabel('Receipt note (optional)')).toHaveCount(0);
+    await detail.getByRole('button', { name: 'View receiving status', exact: true }).click();
+    await expect(detail.locator('#receiving')).toBeFocused();
+    await detail.screenshot({ path: `test-results/finance-closed-season-${width}.png` });
+    await detail.getByRole('button', { name: '← Back to results', exact: true }).click();
+    await page.reload();
+    await page.getByRole('button', { name: /Receiving supplier/ }).click();
+    await expect(detail.getByRole('button', { name: 'Mark received', exact: true })).toHaveCount(0);
+    expect(calls).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
+test('failed actionability load does not briefly expose receiving and a retry restores the closed-season explanation', async ({ page }) => {
+  const { orders, calls } = await mock(page, ['school_submitter']);
+  orders.push(submittedOrder({ season_closed: true }));
+  let failed = true;
+  await page.route('**/rest/v1/finance_po_actionability*', async route => {
+    if (failed) return route.fulfill({ status: 503, json: { message: 'Fixture actionability unavailable' } });
+    await route.fallback();
+  });
+  await page.goto('/#orders');
+  await expect(page.getByRole('alert')).toContainText('Fixture actionability unavailable');
+  await expect(page.getByRole('button', { name: 'Mark received', exact: true })).toHaveCount(0);
+  failed = false;
+  await page.getByRole('button', { name: 'Reload Finance', exact: true }).click();
+  await page.getByRole('button', { name: /Receiving supplier/ }).click();
+  await expect(page.getByRole('dialog').first()).toContainText('Closed season — read-only');
+  expect(calls).toEqual([]);
 });
