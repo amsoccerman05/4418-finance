@@ -33,8 +33,8 @@ async function fixture(page:Page, options:{role:string,status?:string,own?:boole
    const path=url.pathname;let body:any;
    if(path==='/auth/v1/user')body=user;
    else if(path==='/rest/v1/rpc/finance_context'){
-    const caps=role==='mentor'?['po_approver','finance_approver']:role==='admin_lead'?['school_submitter']:role==='readonly'?['finance_admin','school_submitter']:[];
-    body={profile:{id:viewer,display_name:'Synthetic '+role,role,primary_area_id:null},can_create:true,is_admin:role==='readonly',capabilities:caps,areas:[{id:'area',name:'Build',active:true}],people:[{id:viewer,name:'Synthetic '+role}],coach_self_approvals:role==='mentor'&&order.requester_id===viewer&&order.status==='awaiting_approval'?[{po_id:poid,allowed:!approvals.length,reason:'Approve only your Coach step. A different assigned Finance Lead must approve Finance.'}]:[]};
+    const caps=role==='mentor'?['po_approver','finance_approver']:role==='admin_lead'?['school_submitter']:['readonly','admin'].includes(role)?['finance_admin','school_submitter','po_approver','finance_approver']:[];
+    body={profile:{id:viewer,display_name:'Synthetic '+role,role,primary_area_id:null},can_create:true,is_admin:['readonly','admin'].includes(role),capabilities:caps,areas:[{id:'area',name:'Build',active:true}],people:[{id:viewer,name:'Synthetic '+role}],coach_self_approvals:role==='mentor'&&order.requester_id===viewer&&order.status==='awaiting_approval'?[{po_id:poid,allowed:!approvals.length,reason:'Approve only your Coach step. A different assigned Finance Lead must approve Finance.'}]:[]};
     expect(body.profile.role).toBe(role);
    }
    else if(path==='/rest/v1/rpc/finance_budget_context')body={can_manage:false};
@@ -67,6 +67,16 @@ async function fixture(page:Page, options:{role:string,status?:string,own?:boole
 async function open(page:Page){await page.goto('/#orders');await page.getByRole('button',{name:/PO 42.*Fixture supplier/}).click();return page.getByRole('dialog').first();}
 async function shot(page:Page,name:string,width:number,unexpected:string[]){expect(unexpected).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`test-results/roles-${name}-${width}.png`,fullPage:true});}
 for(const width of [390,1440]){
+ test(`removed Owner Admin role fails closed with stale server privileges ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});const f=await fixture(page,{role:'admin',status:'awaiting_approval'});const d=await open(page);
+  await expect(d).toContainText('Read-only access');await expect(d.getByRole('button',{name:/^Approve|Request changes|Edit purchase|Cancel purchase|Mark submitted|Mark received/})).toHaveCount(0);
+  expect(f.calls).toEqual([]);await shot(page,'removed-legacy-role',width,f.unexpected);
+ });
+ test(`Admin Lead sees submitted request status without changing another student's contents ${width}`,async({page})=>{
+  await page.setViewportSize({width,height:900});const f=await fixture(page,{role:'admin_lead',status:'awaiting_approval',own:false});const d=await open(page);
+  await expect(d).toContainText('Waiting for Lead Coach and Finance Lead');await expect(d.getByRole('button',{name:/^Approve|Request changes|Edit purchase|Cancel purchase|Mark submitted|Mark received/})).toHaveCount(0);
+  expect(f.calls).toEqual([]);await shot(page,'admin-lead-view-request',width,f.unexpected);
+ });
  test(`prospective unassigned Student creates and submits only a request ${width}`,async({page})=>{
   await page.setViewportSize({width,height:900});const f=await fixture(page,{role:'student',empty:true});await page.goto('/#orders');await page.getByRole('button',{name:'New purchase order',exact:true}).click();const d=page.getByRole('dialog');
   await d.getByLabel('Google Sheet URL').fill('https://docs.google.com/spreadsheets/d/FixtureOnly/edit');await d.getByLabel('Vendor', {exact:true}).fill('Fixture supplier');await d.getByLabel('Total amount (USD)', {exact:true}).fill('125');await d.getByLabel('Functional area').selectOption('area');await d.getByLabel('Purpose / short description', {exact:true}).fill('Fixture parts');await d.getByRole('button',{name:'Save draft',exact:true}).click();await d.getByRole('button',{name:'Submit for approval',exact:true}).click();

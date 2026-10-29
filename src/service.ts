@@ -121,7 +121,7 @@ async function rows<T>(table: string, sort = "id") {
 }
 export async function load(): Promise<Data> {
   const context = await rpc("finance_context");
-  if (!["student", "lead", "admin_lead", "mentor", "admin"].includes(context.profile?.role)) {
+  if (!["student", "lead", "admin_lead", "mentor"].includes(context.profile?.role)) {
     context.can_create = false; context.is_admin = false; context.capabilities = []; context.coach_self_approvals = [];
   }
   const [orders, approvals, history, revisions, assignments, actionability] =
@@ -163,10 +163,10 @@ export function needsMe(d: Data, p: PO) {
 
 /** Presentation only; every write rechecks live server authority. */
 export function canChangePOs(d: Data) {
-  return ["student", "lead", "admin_lead", "mentor", "admin"].includes(d.context.profile.role);
+  return ["student", "lead", "admin_lead", "mentor"].includes(d.context.profile.role);
 }
 export function coachSelfFact(d: Data, p: PO) {
-  return p.requester_id === d.context.profile.id && ["mentor", "admin"].includes(d.context.profile.role)
+  return p.requester_id === d.context.profile.id && ["mentor"].includes(d.context.profile.role)
     ? d.context.coach_self_approvals?.find(f => f.po_id === p.id) : undefined;
 }
 export function canSelfApproveCoach(d: Data, p: PO) {

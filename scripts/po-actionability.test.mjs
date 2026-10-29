@@ -73,3 +73,9 @@ test('own staff Coach queue follows exact server allowance, never own Finance or
  d.context.coach_self_approvals[0].allowed=false;assert.equal(needsMe(d,own),false);
  d.context.coach_self_approvals[0].allowed=true;d.context.profile.role='admin_lead';assert.equal(needsMe(d,own),false);
 });
+
+test('removed legacy admin never acts on stale capabilities or old Coach self-proof', () => {
+ const d=data(['po_approver','finance_approver','school_submitter','finance_admin']);d.context.profile.role='admin';d.context.is_admin=true;
+ d.context.coach_self_approvals=[{po_id:'po',allowed:true,reason:'Stale staff proof'}];
+ assert.equal(needsMe(d,po),false);assert.equal(needsMe(d,{...po,requester_id:'viewer'}),false);
+});

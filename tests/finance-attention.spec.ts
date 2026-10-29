@@ -55,7 +55,7 @@ for (const width of [390, 1440]) {
     await expect(attention).toBeVisible();
     await expect(attention).toContainText('No purchase orders currently need an approval or school submission from you.');
     await expect(attention.getByRole('heading', { name: 'Waiting for independent review' })).toBeVisible();
-    await expect(attention).toContainText('different mentor or admin who has not already approved this revision');
+    await expect(attention).toContainText('different mentor who has not already approved this revision');
     await expect(attention.getByRole('button', { name: /Review purchase/ })).toHaveCount(0);
     await attention.getByRole('button', { name: 'PO 42 · Fixture supplier · View approval status', exact: true }).click();
     const detail = page.getByRole('dialog').first();

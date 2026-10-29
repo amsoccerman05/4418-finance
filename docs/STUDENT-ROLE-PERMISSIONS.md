@@ -1,7 +1,9 @@
 # Student roles and independent Coach approval
 
-Coordinated release: apply Hub `20261028160322_student_admin_lead_roles.sql`
-before Finance `20261028160500_finance_student_roles_readonly_privacy.sql`.
+Current proposed correction: apply Hub
+`20261029190339_canonical_roles_mentor_administration.sql` before Finance
+`20261029190421_finance_canonical_roles.sql`. These follow the already-deployed
+October 28 role migrations; never reapply the old release.
 The coordinator applies exact reviewed migrations; never bulk-push historical SQL.
 Do not deploy this frontend until the shared schema is verified.
 
@@ -15,7 +17,11 @@ Do not deploy this frontend until the shared schema is verified.
   Role alone grants no approval, budget management, financial administration,
   override or other-owner editing. Existing explicit capabilities/positions retain
   their semantics; Readonly/inactive status overrides them.
-- An active Mentor or existing Admin with a live Lead Coach1/2 assignment may
+- The supported account roles are Readonly, Student, Lead, Admin Lead and Mentor.
+  There is no Owner Admin alias. The separately approved Hub migration owns the
+  single existing Owner Admin account transition to Admin Lead; Finance changes
+  no accounts or assignments. Unknown legacy roles fail closed.
+- An active Mentor with a live Lead Coach1/2 assignment may
   normally approve **only their own Coach step**. A different assigned Finance
   Lead must supply Finance. Student/Lead/Admin Lead profiles cannot self-approve
   via an accidental Coach assignment. Normal own request-changes is not added.
@@ -25,14 +31,16 @@ Do not deploy this frontend until the shared schema is verified.
 - A legacy normal Finance vote can join this new flow only when non-override and
   its different actor is currently active assigned Finance Lead; otherwise the
   UI explains resubmission. Old approvals/history are never rewritten. Existing
-  reasoned Mentor/Admin emergency overrides outside the new marked flow remain.
+  reasoned Mentor emergency overrides outside the new marked flow remain.
+  Existing authorized Admin votes/history remain valid; that old account role no
+  longer permits any new staff override or own-Coach approval.
 - Budget totals remain whole-season amounts. PO detail and PO-specific history
   projections follow normal PO visibility, including embedded history payloads.
 
-The migration replaces sixteen existing function bodies using exact live-source
-drift guards and adds one owner-only current-caller helper. Existing table ACLs,
+The correction replaces fifteen existing function bodies using exact live-source
+drift guards; it adds no functions or privileges. Existing table ACLs,
 RLS, function ownership/ACLs, records and assignments are preserved. No role or
-assignment backfill occurs. The existing explicit-filtered `finance_po_history`
+assignment backfill occurs in Finance. The existing explicit-filtered `finance_po_history`
 view is not converted or granted broader access.
 
 ## Verification and artifact isolation
