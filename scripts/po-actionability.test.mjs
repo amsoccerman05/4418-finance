@@ -27,7 +27,7 @@ function service(rows = {}, error = null) {
 }
 const { needsMe } = service();
 const po = { id: 'po', status: 'awaiting_approval', requester_id: 'requester', revision: 3 };
-const data = (capabilities = ['po_approver', 'finance_approver'], approvals = []) => ({ context: { profile: { id: 'viewer' }, capabilities }, approvals });
+const data = (capabilities = ['po_approver', 'finance_approver'], approvals = []) => ({ context: { profile: { id: 'viewer', role: 'student' }, capabilities }, approvals });
 const approval = (slot, props = {}) => ({ po_id: 'po', revision: 3, slot, action: 'approved', actor_id: 'viewer', ...props });
 
 test('approval queue excludes the current-revision approver even with both capabilities or a position change', () => {
@@ -60,4 +60,16 @@ test('Finance loads the exact closed-season IDs from the visibility-filtered vie
 test('an unavailable actionability read fails closed instead of assuming receiving is allowed', async () => {
   const failure = new Error('Actionability read unavailable');
   await assert.rejects(service({}, failure).load(), failure);
+});
+
+test('Readonly stale capabilities never create an actionable approval', () => {
+ const d=data();d.context.profile.role='readonly';assert.equal(needsMe(d,po),false);
+});
+test('own staff Coach queue follows exact server allowance, never own Finance or stale proofs', () => {
+ const d=data(['po_approver','finance_approver']);d.context.profile.role='mentor';
+ const own={...po,requester_id:'viewer'};
+ assert.equal(needsMe(d,own),false);
+ d.context.coach_self_approvals=[{po_id:'po',allowed:true,reason:'Different Finance Lead'}];assert.equal(needsMe(d,own),true);
+ d.context.coach_self_approvals[0].allowed=false;assert.equal(needsMe(d,own),false);
+ d.context.coach_self_approvals[0].allowed=true;d.context.profile.role='admin_lead';assert.equal(needsMe(d,own),false);
 });

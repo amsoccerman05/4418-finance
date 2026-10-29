@@ -22,6 +22,7 @@ import { createRoot } from "react-dom/client";
 import {
   client,
   load,
+  canChangePOs, coachSelfFact, canSelfApproveCoach, hasCoachSelfApproval,
   mutate,
   label,
   money,
@@ -106,7 +107,7 @@ function App() {
     history.replaceState(history.state, '', url.pathname + url.search + url.hash);
     setWorkspace('orders');
     setSelected(null);
-    if (data.context.can_create) setEditing('new');
+    if (canChangePOs(data) && data.context.can_create) setEditing('new');
     else setMessage('Your account cannot create a purchase request. Contact a mentor for help.');
   }, [data, recovery]);
   const linkedPO = useRef(/^#po\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(location.hash)?.[1] || null);
@@ -123,7 +124,7 @@ function App() {
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, [data]);
-  useEffect(()=>{let alive=true;setCanBudget(false);if(data)void loadBudget().then(b=>{if(alive)setCanBudget(b.can_manage===true)}).catch(()=>{});return()=>{alive=false}},[data]);
+  useEffect(()=>{let alive=true;setCanBudget(false);if(data && canChangePOs(data))void loadBudget().then(b=>{if(alive)setCanBudget(b.can_manage===true)}).catch(()=>{});return()=>{alive=false}},[data]);
   const generation = useRef(0);
   useEffect(() => {
     if (!client) return;
@@ -209,7 +210,14 @@ function App() {
       }
       if (gen === generation.current) setMessage(text);
     } catch (e) {
-      if (gen === generation.current) setError(err(e));
+      if (gen === generation.current) {
+        setError(err(e));
+        // Refresh authority after a denied write without remounting or erasing the editor.
+        if ((e as {code?: string})?.code === '42501') {
+          try { const fresh = await loadFinance(); if (gen === generation.current) setData(fresh); }
+          catch { /* Keep the original error and unsaved draft; never auto-retry a write. */ }
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -290,10 +298,10 @@ function App() {
       </a>
       <SuiteHeader app="Finance" context={workspaces.find(([id])=>id===workspace)?.[1]} name={data?.context.profile.display_name} busy={busy} onSignOut={()=>editorGuard.requestLeave(()=>{closeDialog();void run(async()=>{const r=await client!.auth.signOut();if(r.error)throw r.error;},'Signed out');})}/>
 
-      <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data?.context.is_admin}/>
+      <div className="finance-layout"><FinanceNav page={workspace} canBudget={canBudget} admin={!!data && canChangePOs(data) && data.context.is_admin}/>
       <main id="main">
         {workspace === 'orders' && <FinancePageHeader title="Purchase orders" description="The Google Sheet is your PO. Finance keeps its approvals moving.">
-          {data?.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
+          {data && canChangePOs(data) && data.context.can_create && <button className="primary" disabled={busy} onClick={() => setEditing("new")}><Plus size={18} aria-hidden="true" />New purchase order</button>}
         </FinancePageHeader>}
         {!client ? (
           <div className="panel">
@@ -396,11 +404,11 @@ function App() {
               </Dialog>
             )}
             {editing && editorGuard.confirming && (
-              <Dialog title="Save your purchase order?" busy={busy} onClose={editorGuard.keepEditing} closeLabel="Keep editing" className="po-leave-dialog">
-                <p>Your changes have not been saved. Save a draft to resume later, or discard only these unsaved edits.</p>
-                <p className="muted">Saving a draft does not submit it for approval. Required fields must be complete.</p>
+              <Dialog title={data && canChangePOs(data) ? "Save your purchase order?" : "Keep your unsaved work?"} busy={busy} onClose={editorGuard.keepEditing} closeLabel="Keep editing" className="po-leave-dialog">
+                <p>{data && canChangePOs(data) ? "Your changes have not been saved. Save a draft to resume later, or discard only these unsaved edits." : "Your account is read-only. Keep this editor open to copy your unsaved text, or discard only these local edits. Nothing will be saved."}</p>
+                {data && canChangePOs(data) && <p className="muted">Saving a draft does not submit it for approval. Required fields must be complete.</p>}
                 <div className="toolbar po-leave-actions">
-                  <button className="primary" disabled={busy} onClick={() => {
+                  {data && canChangePOs(data) && <button className="primary" disabled={busy} onClick={() => {
                     // Close the confirmation before browser validation focuses
                     // a missing field in the still-mounted underlying form.
                     editorGuard.beginSaveAndLeave();
@@ -408,7 +416,7 @@ function App() {
                       if (poForm.current?.reportValidity()) poForm.current.requestSubmit();
                       else editorGuard.saveFailed();
                     });
-                  }}>Save draft</button>
+                  }}>Save draft</button>}
                   <button className="danger" disabled={busy} onClick={editorGuard.discard}>Discard changes</button>
                 </div>
               </Dialog>
@@ -804,7 +812,7 @@ function POForm({
       }}
       onSubmit={(e) => {
         const f = fields(e);
-        if (saving.current) return;
+        if (saving.current || !canChangePOs(data)) return;
         saving.current = true;
         void run(async () => {
           try {
@@ -826,7 +834,8 @@ function POForm({
         }, "Draft saved. Submit it when the Google Sheet is ready.");
       }}
     >
-      <p className="po-draft-help">Save a draft before leaving. Resume it from Purchase orders by opening the draft and choosing <strong>Resume draft</strong>. Nothing is submitted for approval automatically.</p>
+      {!canChangePOs(data) && <p role="status">Your account is now read-only. Your unsaved text is kept here; keep this window open to copy it, or discard it when ready. Saving is unavailable.</p>}
+      {canChangePOs(data) && <p className="po-draft-help">Save a draft before leaving. Resume it from Purchase orders by opening the draft and choosing <strong>Resume draft</strong>. Nothing is submitted for approval automatically.</p>}
       <label>
         Google Sheet URL
         <input
@@ -908,7 +917,7 @@ function POForm({
       </p>
       <div className="po-draft-actions">
         <span role="status">{dirty ? "Unsaved changes" : "No unsaved changes"}</span>
-        <button className="primary">Save draft</button>
+        <button className="primary" disabled={!canChangePOs(data)}>Save draft</button>
       </div>
     </form>
   );
@@ -927,7 +936,11 @@ function Detail({
   const name = (id: string | null) =>
     d.context.people.find((n) => n.id === id)?.name || "Team member";
   const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
-  const owner = p.requester_id === d.context.profile.id || d.context.is_admin;
+  const writable = canChangePOs(d);
+  const selfFact = coachSelfFact(d, p);
+  const normalSelf = canSelfApproveCoach(d, p);
+  const selfRecorded = hasCoachSelfApproval(d, p);
+  const owner = writable && (p.requester_id === d.context.profile.id || d.context.is_admin);
   const locked = ["cancelled", "submitted_to_school", "received"].includes(p.status);
   const nextStep = poNextStep(d, p);
   const goToNextStep = () => {
@@ -970,7 +983,7 @@ function Detail({
         </a>
       )}
       <p className="muted">
-        Approvals cover the submitted spreadsheet. If you change it, edit and resubmit the PO for both approvals.
+        Approvals cover the submitted spreadsheet.{owner && !locked && <> If you change it, edit and resubmit the PO for both approvals.</>}
       </p>
       {owner && !locked && (
         <div className="toolbar" id="owner-actions" tabIndex={-1}>
@@ -1028,7 +1041,8 @@ function Detail({
             .sort((a, b) => b.acted_at.localeCompare(a.acted_at));
           const latest = p.status === "draft" ? undefined : actions[0];
           const canAct =
-            p.status === "awaiting_approval" &&
+            writable && p.status === "awaiting_approval" &&
+            !(p.requester_id === d.context.profile.id && (selfFact || selfRecorded) && (slot === "finance_approver" || !normalSelf)) &&
             (d.context.capabilities.includes(slot) || canOverride) &&
             (p.requester_id !== d.context.profile.id || canOverride);
           const alreadyActed = d.approvals.some(
@@ -1046,7 +1060,7 @@ function Detail({
                   : "Lead Coach Approval"}
               </h2>
               <Badge status={latest?.action || (p.status === "draft" ? "not_submitted" : p.status === "cancelled" ? "not_required" : p.status === "changes_requested" ? "awaiting_resubmission" : "pending")} />
-              {!latest && <p>{p.status === 'draft' ? 'Submit this draft to request approval.' : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
+              {!latest && <p>{p.status === 'draft' ? (owner ? 'Submit this draft to request approval.' : 'This draft has not been submitted for approval.') : p.status === 'cancelled' ? 'This request is cancelled; no approval is needed.' : p.status === 'changes_requested' ? 'The requester must update and resubmit this PO.' : `Waiting for ${slot === "finance_approver" ? "Finance Lead" : "Lead Coach"}`}</p>}
               {latest && (
                 <>
                   <p>
@@ -1089,7 +1103,7 @@ function Detail({
                     Explanation / requested changes
                     <textarea name="reason" maxLength={2000} />
                   </label>
-                  {canOverride && (
+                  {canOverride && !normalSelf && (
                     <label>
                       Override reason (required if unassigned or requester)
                       <input name="override_reason" maxLength={2000} />
@@ -1106,9 +1120,9 @@ function Detail({
                         {slot === "finance_approver" ? "Approve & assign budget" : "Approve Lead Coach"}
                       </button>
                     )}
-                    <button className="secondary" value="request_changes">
+                    {!normalSelf && <button className="secondary" value="request_changes">
                       Request changes
-                    </button>
+                    </button>}
                   </div>
                 </form>
               )}
@@ -1127,7 +1141,7 @@ function Detail({
             <p>Reference: {p.school_reference || "Not provided"}</p>
             <p>{p.school_note}</p>
           </>
-        ) : p.status === "approved" &&
+        ) : writable && p.status === "approved" &&
           (canOverride ||
             d.context.capabilities.includes("school_submitter")) ? (
           <form
@@ -1175,7 +1189,7 @@ function Detail({
           <p>{name(p.received_by)} · {when(p.received_at)}</p>
           {p.receipt_note && <p>{p.receipt_note}</p>}
         </> : d.closedSeasonPOIds.includes(p.id) ? <p>{closedSeasonGuidance}</p>
-        : canOverride || d.context.capabilities.includes("school_submitter") ? (
+        : writable && (canOverride || d.context.capabilities.includes("school_submitter")) ? (
           <form className="form" onSubmit={e => {
             const f = fields(e);
             void run(() => mutate("receive", { id: p.id, version: p.version, note: f.note }), "Marked received");

@@ -7,12 +7,16 @@ import ts from 'typescript';
 const source = readFileSync(new URL('../src/po-next-step.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
-vm.runInNewContext(code, { module, exports: module.exports });
+const serviceSource = readFileSync(new URL('../src/service.ts', import.meta.url), 'utf8').replaceAll('import.meta.env.VITE_SUPABASE_URL', 'undefined').replaceAll('import.meta.env.VITE_SUPABASE_ANON_KEY', 'undefined');
+const serviceCode = ts.transpileModule(serviceSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+const service = { exports: {} }; vm.runInNewContext(serviceCode, { module: service, exports: service.exports, require: () => ({}) });
+vm.runInNewContext(code, { module, exports: module.exports, require: () => service.exports });
 const { poNextStep, selfApprovalBlocked } = module.exports;
 const po = (status = 'awaiting_approval', props = {}) => ({ id: 'po', requester_id: 'requester', status, revision: 3, ...props });
 const data = (props = {}) => ({
   context: { profile: { id: 'viewer', role: 'student' }, capabilities: [], is_admin: false, ...props.context },
   approvals: props.approvals || [],
+  history: props.history || [],
   closedSeasonPOIds: props.closedSeasonPOIds || [],
 });
 const approval = (slot, actor_id = 'approver', props = {}) => ({ po_id: 'po', revision: 3, slot, actor_id, action: 'approved', ...props });
@@ -191,4 +195,15 @@ test('closed-season receiving is read-only for every role, without changing rece
       assert.equal(next('submitted_to_school', { ...props, closedSeasonPOIds: ['different-po'] }).title.includes('Closed season'), false);
     }
   }
+});
+
+test('Readonly own draft gives read-only guidance despite stale admin and capabilities', () => {
+ const step=next('draft',{context:{profile:{id:'viewer',role:'readonly'},is_admin:true,capabilities:['school_submitter']}},{requester_id:'viewer'});
+ assert.equal(step.title,'Read-only access');assert.equal(step.target,null);
+});
+test('server-confirmed own Coach flow names only Coach and preserves legacy resubmit reason', () => {
+ const context={profile:{id:'viewer',role:'mentor'},capabilities:['po_approver','finance_approver'],coach_self_approvals:[{po_id:'po',allowed:true,reason:'Different assigned Finance Lead required.'}]};
+ assert.equal(next('awaiting_approval',{context},{requester_id:'viewer'}).target,'approval-po_approver');
+ context.coach_self_approvals[0]={po_id:'po',allowed:false,reason:'Edit and resubmit this legacy override.'};
+ const step=next('awaiting_approval',{context},{requester_id:'viewer'});assert.match(step.description,/resubmit/);assert.equal(step.target,null);
 });
