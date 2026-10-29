@@ -20,7 +20,7 @@ const data = (props = {}) => ({
   closedSeasonPOIds: props.closedSeasonPOIds || [],
 });
 const approval = (slot, actor_id = 'approver', props = {}) => ({ po_id: 'po', revision: 3, slot, actor_id, action: 'approved', ...props });
-const roles = ['student', 'lead', 'mentor', 'admin'];
+const roles = ['student', 'lead', 'admin_lead', 'mentor'];
 const slots = ['po_approver', 'finance_approver'];
 const next = (status, props = {}, poProps = {}) => poNextStep(data(props), po(status, poProps));
 
@@ -29,7 +29,7 @@ test('self-approval waiting explanation follows the current assigned slot, not F
   const context = { profile: { id: 'viewer', role: 'lead' }, capabilities: ['finance_approver', 'finance_admin'], is_admin: true };
   const d = data({ context, approvals: [approval('po_approver', 'coach')] });
   assert.equal(selfApprovalBlocked(d, own), true);
-  assert.match(poNextStep(d, own).description, /different mentor or admin who has not already approved this revision/);
+  assert.match(poNextStep(d, own).description, /different mentor who has not already approved this revision/);
   assert.match(poNextStep(d, own).description, /explicit override reason and two different approvers/);
   assert.equal(selfApprovalBlocked(data({ context, approvals: [approval('finance_approver')] }), own), false);
   for (const stale of [approval('finance_approver', 'mentor', { revision: 2 }), approval('finance_approver', 'mentor', { po_id: 'other' }), approval('finance_approver', 'mentor', { action: 'changes_requested' })]) {
@@ -38,7 +38,7 @@ test('self-approval waiting explanation follows the current assigned slot, not F
   for (const status of ['draft', 'changes_requested', 'approved', 'submitted_to_school', 'received', 'cancelled']) {
     assert.equal(selfApprovalBlocked(d, { ...own, status }), false);
   }
-  for (const role of ['mentor', 'admin']) assert.equal(selfApprovalBlocked(data({ context: { ...context, profile: { id: 'viewer', role } } }), own), false);
+  for (const role of ['mentor']) assert.equal(selfApprovalBlocked(data({ context: { ...context, profile: { id: 'viewer', role } } }), own), false);
   assert.equal(selfApprovalBlocked(data({ context: { ...context, capabilities: ['finance_admin'] } }), own), false);
   assert.equal(selfApprovalBlocked(d, po()), false);
 });
@@ -108,8 +108,8 @@ test('two approval capabilities never authorize the viewer to complete both appr
   }
 });
 
-test('mentor and admin override guidance preserves the reason and distinct-person requirements', () => {
-  for (const role of ['mentor', 'admin']) {
+test('mentor override guidance preserves the reason and distinct-person requirements', () => {
+  for (const role of ['mentor']) {
     const context = { profile: { id: 'viewer', role }, capabilities: [] };
     const unassigned = next('awaiting_approval', { context });
     assert.match(unassigned.title, /with an override/);
@@ -131,11 +131,11 @@ test('Finance-only administrators cannot gain override, school-submission, or re
   assert.equal(next('submitted_to_school', props).title, 'Waiting for delivery confirmation');
 });
 
-test('school submission and receiving guidance match designated submitter and mentor/admin authority', () => {
+test('school submission and receiving guidance match designated submitter and mentor authority', () => {
   for (const role of roles) {
     for (const capabilities of [[], ['school_submitter'], ['finance_approver'], ['po_approver']]) {
       const props = { context: { profile: { id: 'viewer', role }, capabilities } };
-      const allowed = ['mentor', 'admin'].includes(role) || capabilities.includes('school_submitter');
+      const allowed = ['mentor'].includes(role) || capabilities.includes('school_submitter');
       const submitted = next('approved', props);
       const receiving = next('submitted_to_school', props);
       assert.equal(submitted.target, 'school-submission');

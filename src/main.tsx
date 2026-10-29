@@ -935,7 +935,7 @@ function Detail({
 }) {
   const name = (id: string | null) =>
     d.context.people.find((n) => n.id === id)?.name || "Team member";
-  const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
+  const canOverride = ["mentor"].includes(d.context.profile.role);
   const writable = canChangePOs(d);
   const selfFact = coachSelfFact(d, p);
   const normalSelf = canSelfApproveCoach(d, p);
@@ -1198,7 +1198,7 @@ function Detail({
             <label>Receipt note (optional)<textarea name="note" maxLength={2000} /></label>
             <button className="primary">Mark received</button>
           </form>
-        ) : <p>Waiting for a designated school submitter or mentor/admin to confirm receipt.</p>}
+        ) : <p>Waiting for a designated school submitter or mentor to confirm receipt.</p>}
       </section>}
       <section className="panel">
         <h2>Activity History</h2>

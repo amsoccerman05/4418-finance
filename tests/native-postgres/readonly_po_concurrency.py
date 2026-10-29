@@ -43,6 +43,10 @@ class ReadonlyConcurrency(unittest.TestCase):
         ]:
             self.owner.query((ROOT/path).read_text())
         self.owner.query(MIGRATION.read_text())
+        # Synthetic stand-in for the separate Hub migration's approved transition.
+        # Production account mapping is owned by Hub, not this Finance migration.
+        self.owner.query("update public.profiles set role='admin_lead' where role='admin';alter table public.profiles drop constraint profiles_role_check;alter table public.profiles add constraint profiles_role_check check(role in ('readonly','student','lead','admin_lead','mentor'))")
+        self.owner.query((ROOT / 'supabase/migrations/20261029190421_finance_canonical_roles.sql').read_text())
 
     def mutate(self, connection, action, payload):
         return connection.scalar('select public.finance_mutate($1,$2::jsonb)', [action, json.dumps(payload)])
@@ -75,6 +79,24 @@ class ReadonlyConcurrency(unittest.TestCase):
     def test_create_denied_after_advisory_lock_demotion(self): self.barrier('create')
     def test_edit_denied_after_row_lock_demotion(self): self.barrier('edit')
     def test_submit_denied_after_row_lock_demotion(self): self.barrier('submit')
+
+    def test_mentor_loses_other_po_edit_during_lock_wait_after_admin_lead_change(self):
+        po = self.create_po('student')
+        blocker, waiter = self.connect(), self.connect('mentor')
+        blocker.query('begin')
+        blocker.query('select id from public.finance_purchase_orders where id=$1 for update', [po])
+        payload = dict(id=po, version=1, area_id=native.AREA,
+                       sheet_url='https://docs.google.com/spreadsheets/d/NativeFixture/edit',
+                       vendor='Must not replace student work', amount=125, purpose='Synthetic only')
+        before = self.snapshot()
+        future = self.pool.submit(self.mutate, waiter, 'edit', payload)
+        self.wait_blocked(waiter, blocker, future)
+        self.owner.query("update public.profiles set role='admin_lead' where id=$1", [native.IDS['mentor']])
+        blocker.query('commit')
+        with self.assertRaises(native.DatabaseError) as failure:
+            future.result(timeout=16)
+        self.assertEqual(failure.exception.code, '42501')
+        self.assertEqual(self.snapshot(), before)
 
     def budget_barrier(self, target):
         mentor = self.connect('mentor')

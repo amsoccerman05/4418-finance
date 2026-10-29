@@ -268,10 +268,10 @@ for (const width of [390, 820, 1440]) {
   });
 }
 
-for (const actor of ["student", "finance_approver", "finance_admin", "mentor", "admin"]) {
+for (const actor of ["student", "finance_approver", "finance_admin", "mentor", "admin_lead"]) {
   test(`received action follows existing school-submission authority for ${actor}`, async ({ page }) => {
-    const privileged = actor === "mentor" || actor === "admin";
-    const { orders, context, calls } = await mock(page, actor.startsWith("finance_") ? [actor] : [], privileged || actor === "finance_admin");
+    const privileged = actor === "mentor" || actor === "admin_lead";
+    const { orders, context, calls } = await mock(page, actor === "admin_lead" ? ["school_submitter"] : actor.startsWith("finance_") ? [actor] : [], actor === "mentor" || actor === "finance_admin");
     context.profile.role = privileged ? actor : "student";
     orders.push(submittedOrder());
     await page.goto("/#orders");
@@ -280,7 +280,7 @@ for (const actor of ["student", "finance_approver", "finance_admin", "mentor", "
     if (privileged) await expect(receive).toBeVisible();
     else {
       await expect(receive).toHaveCount(0);
-      await expect(page.getByText("Waiting for a designated school submitter or mentor/admin to confirm receipt.")).toBeVisible();
+      await expect(page.getByText("Waiting for a designated school submitter or mentor to confirm receipt.")).toBeVisible();
     }
     expect(calls).toEqual([]);
   });

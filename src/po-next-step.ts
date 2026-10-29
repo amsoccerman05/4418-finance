@@ -14,13 +14,13 @@ const slotName = (slot: typeof approvalSlots[number]) =>
 
 export const closedSeasonGuidance = "This purchase order belongs to a closed budget season and is read-only. It cannot be marked received.";
 
-export const selfApprovalGuidance = "You requested this PO, so you cannot approve it yourself. Ask a different mentor or admin who has not already approved this revision to review it using the existing override process. An explicit override reason and two different approvers are still required.";
+export const selfApprovalGuidance = "You requested this PO, so you cannot approve it yourself. Ask a different mentor who has not already approved this revision to review it using the existing override process. An explicit override reason and two different approvers are still required.";
 
 /** A visibility explanation, never an authorization for the requester to act. */
 export function selfApprovalBlocked(d: Data, p: PO): boolean {
   return canChangePOs(d) && p.status === "awaiting_approval" &&
     p.requester_id === d.context.profile.id &&
-    !["admin", "mentor"].includes(d.context.profile.role) &&
+    !["mentor"].includes(d.context.profile.role) &&
     approvalSlots.some(slot => d.context.capabilities.includes(slot) &&
       !d.approvals.some(a => a.po_id === p.id && a.revision === p.revision &&
         a.slot === slot && a.action === "approved"));
@@ -36,7 +36,7 @@ export function poNextStep(d: Data, p: PO): PONextStep {
   const viewer = d.context.profile.id;
   const requester = p.requester_id === viewer;
   const owner = requester || d.context.is_admin;
-  const canOverride = ["admin", "mentor"].includes(d.context.profile.role);
+  const canOverride = ["mentor"].includes(d.context.profile.role);
   const canSubmitOrReceive = canOverride || d.context.capabilities.includes("school_submitter");
 
   switch (p.status) {
@@ -126,7 +126,7 @@ export function poNextStep(d: Data, p: PO): PONextStep {
         actionLabel: "Review submission",
       } : {
         title: "Waiting for school submission",
-        description: "A designated school submitter or mentor/admin must send the approved Google Sheet to school and record the submission.",
+        description: "A designated school submitter or mentor must send the approved Google Sheet to school and record the submission.",
         target: "school-submission",
         actionLabel: "View submission status",
       };
@@ -144,7 +144,7 @@ export function poNextStep(d: Data, p: PO): PONextStep {
         actionLabel: "Review receiving",
       } : {
         title: "Waiting for delivery confirmation",
-        description: "A designated school submitter or mentor/admin can mark this received once the entire order has arrived.",
+        description: "A designated school submitter or mentor can mark this received once the entire order has arrived.",
         target: "receiving",
         actionLabel: "View receiving status",
       };
